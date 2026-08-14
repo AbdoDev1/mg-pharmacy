@@ -1,12 +1,12 @@
 {
-  "name": "Biozone",
-  "short_name": "Biozone",
-  "description": "Biozone Store",
+  "name": "MG Pharmacy",
+  "short_name": "MG Pharmacy",
+  "description": "MG Pharmacy Store",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f9fafb",
-  "theme_color": "#1d4ed8",
+  "theme_color": "#0D2B5B",
   "dir": "rtl",
   "lang": "ar",
   "icons": [

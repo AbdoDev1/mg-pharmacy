@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ product.name_ar }} — Biozone{% endblock %}
+{% block title %}{{ product.name_ar }} — MG Pharmacy{% endblock %}
 
 {% block body_attrs %}
 hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#cart-badge',swap:'innerHTML'})"
