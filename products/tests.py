@@ -150,8 +150,12 @@ class ProductUnitsForClientTestCase(TestCase):
             product=self.product, size=ProductUnit.Size.LARGE, name='كرتونة',
             qty_in_small=50, unit_price=Decimal('450.00'),
         )
-        self.small_account_type = AccountType.objects.create(
-            name='قطاعي', default_unit_size=AccountType.UnitSize.SMALL,
+        # get_or_create مش create() هنا: بداية Phase 3، "قطاعي" بقى بيتعمل
+        # رسميًا في data migration (accounts/0010_create_retail_account_type)،
+        # فهو موجود في القاعدة من الأول بدل ما يتعمل من الصفر في كل تست —
+        # نفس النمط المتبع تحت لـ "جملة".
+        self.small_account_type, _ = AccountType.objects.get_or_create(
+            name='قطاعي', defaults={'default_unit_size': AccountType.UnitSize.SMALL},
         )
         self.large_account_type, _ = AccountType.objects.get_or_create(
             name='جملة', defaults={'default_unit_size': AccountType.UnitSize.LARGE},

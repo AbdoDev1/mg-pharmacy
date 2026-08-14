@@ -95,9 +95,10 @@ class RegisterForm(UserCreationForm):
         user.status = User.Status.ACTIVE
         if commit:
             user.save()
-            # نوع الحساب "قطاعي" هو المفروض يتعمل رسميًا في Phase 3، لكن
-            # لحد ما توصلها بنستخدم get_or_create هنا عشان الـ ForeignKey
-            # الإجباري في ClientProfile يلاقي قيمة صالحة من غير ما نستنى.
+            # نوع الحساب "قطاعي" بقى بيتعمل رسميًا في data migration
+            # (accounts/0010_create_retail_account_type). get_or_create هنا
+            # فضل كـ fallback دفاعي بس (يشتغل حتى لو الـ migration بشكل ما
+            # لسه ما اتطبقتش)، مش هو المصدر الرسمي لإنشاء النوع بقى.
             retail_type, _ = AccountType.objects.get_or_create(
                 name=DEFAULT_RETAIL_ACCOUNT_TYPE_NAME,
                 defaults={'default_unit_size': AccountType.UnitSize.SMALL},
