@@ -45,36 +45,76 @@ class ClientPasswordChangeForm(PasswordChangeForm):
     )
 
 
+DEFAULT_RETAIL_ACCOUNT_TYPE_NAME = 'قطاعي'
+
+
 class RegisterForm(UserCreationForm):
-    business_name = forms.CharField(max_length=255, label='اسم النشاط التجاري')
-    account_type = forms.ModelChoiceField(
-        queryset=AccountType.objects.filter(is_active=True),
-        label='نوع الحساب',
-        empty_label=None,
-    )
-    address = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), label='العنوان')
+    """
+    فورم تسجيل B2C مبسّط (Phase 2): اسم، هاتف، إيميل اختياري، باسورد بس.
+    مفيش business_name/account_type/address إجباريين هنا — دول بيتاخدولهم
+    قيم افتراضية تلقائيًا في save() عشان الموديل (ClientProfile) يفضل
+    زي ما هو من غير أي migration، بينما تجربة العميل بسيطة وسريعة.
+    رقم الهاتف نفسه هو الـ username (العميل مش محتاج يفتكر يوزرنيم منفصل).
+    """
+    full_name = forms.CharField(max_length=150, label='الاسم')
     phone = forms.CharField(max_length=20, label='رقم الهاتف')
+    email = forms.EmailField(label='البريد الإلكتروني (اختياري)', required=False)
+
+    # بدون field_order، الحقول الموروثة من UserCreationForm (password1/2)
+    # كانت هتظهر فوق full_name/phone/email في الفورم — بنفرض الترتيب
+    # المنطقي (بيانات العميل الأول، الباسورد آخر حاجة) صراحةً هنا.
+    field_order = ['full_name', 'phone', 'email', 'password1', 'password2']
 
     class Meta:
         model = User
-        fields = ('username', 'email', 'password1', 'password2')
+        # username مش موجود هنا عمدًا — بيتحدد تلقائيًا من رقم الهاتف في
+        # save() بدل ما نطلب من العميل يختار يوزرنيم منفصل.
+        fields = ('password1', 'password2')
+
+    def clean_phone(self):
+        phone = self.cleaned_data['phone'].strip()
+        # نفس رقم الهاتف بيبقى الـ username، فلازم يتفحص هنا (مش بس بعد
+        # الحفظ) عشان رسالة الخطأ توضح للعميل إنه مسجّل قبل كده بدل ما
+        # ياخد IntegrityError غامض من قاعدة البيانات.
+        if User.objects.filter(username=phone).exists():
+            raise forms.ValidationError('رقم الهاتف ده مسجّل بحساب من قبل. جرّب تسجّل دخول بدل كده.')
+        return phone
 
     def save(self, commit=True):
         user = super().save(commit=False)
+        phone = self.cleaned_data['phone']
+        full_name = self.cleaned_data['full_name']
+        user.username = phone
+        user.first_name = full_name
+        # الإيميل اختياري في الفورم، لكن الحقل في User فريد (unique) —
+        # لو العميل سابه فاضي، بنولّد قيمة فريدة تلقائية بدل ما نسيبه
+        # فاضي ويتعارض مع عميل تاني سايبه فاضي هو كمان.
+        user.email = self.cleaned_data.get('email') or f'{phone}@no-email.mgpharmacy.local'
         user.role = User.Role.CLIENT
-        user.status = User.Status.PENDING
+        # Phase 2: دخول فوري بدون موافقة أدمن — كل عميل جديد ACTIVE على طول.
+        user.status = User.Status.ACTIVE
         if commit:
             user.save()
+            # نوع الحساب "قطاعي" هو المفروض يتعمل رسميًا في Phase 3، لكن
+            # لحد ما توصلها بنستخدم get_or_create هنا عشان الـ ForeignKey
+            # الإجباري في ClientProfile يلاقي قيمة صالحة من غير ما نستنى.
+            retail_type, _ = AccountType.objects.get_or_create(
+                name=DEFAULT_RETAIL_ACCOUNT_TYPE_NAME,
+                defaults={'default_unit_size': AccountType.UnitSize.SMALL},
+            )
             ClientProfile.objects.create(
                 user=user,
-                business_name=self.cleaned_data['business_name'],
-                account_type=self.cleaned_data['account_type'],
-                address=self.cleaned_data['address'],
-                phone=self.cleaned_data['phone'],
+                business_name=full_name,
+                account_type=retail_type,
+                address='',
+                phone=phone,
             )
         return user
 
 
 class LoginForm(forms.Form):
-    username = forms.CharField(label='اسم المستخدم')
+    # Phase 2: رقم الهاتف بقى هو الـ username لأي عميل جديد، فبنوضّح ده في
+    # اللابل (مع الإبقاء على "اسم المستخدم" بين قوسين لأي حساب قديم كان
+    # موجود قبل Phase 2 بيوزرنيم تاني).
+    username = forms.CharField(label='رقم الهاتف (أو اسم المستخدم)')
     password = forms.CharField(widget=forms.PasswordInput, label='كلمة المرور')
