@@ -71,9 +71,11 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
             {% if not units %}
               <p class="text-sm text-gray-400">مفيش وحدات بيع متاحة لهذا المنتج حاليًا.</p>
             {% elif not request.user.is_authenticated %}
-              {# لا يظهر السعر أو خيار الشراء قبل تسجيل الدخول — رسالة واحدة
-                 بغض النظر عن عدد الوحدات، لأن المحتوى واحد سواء عنده وحدة
-                 أو أكتر. #}
+              {% comment %}
+              لا يظهر السعر أو خيار الشراء قبل تسجيل الدخول — رسالة واحدة
+              بغض النظر عن عدد الوحدات، لأن المحتوى واحد سواء عنده وحدة
+              أو أكتر.
+              {% endcomment %}
               <a href="{% url 'accounts:register' %}"
                  class="block bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg transition text-center">
                 يرجى تسجيل الدخول لعرض السعر وإتمام الطلب

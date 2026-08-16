@@ -91,7 +91,7 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         <p class="text-gray-500 text-sm">اختار القسم المناسب ووصل لمنتجاتك بسرعة</p>
     </div>
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-        {% for cat in categories %}
+        {% for cat in categories|slice:":6" %}
         <a href="{% url 'store:home' %}?category={{ cat.slug }}"
            class="flex flex-col items-center gap-2 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-4 text-center">
             <div class="w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center overflow-hidden shrink-0">
@@ -146,8 +146,13 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {% for product in featured_products %}
             {% with units=product|units_for_client:request.user %}{% with unit=units.0 %}
+            {% comment %}
+            flex flex-col + h-full عشان كل الكروت تاخد نفس ارتفاع الصف
+            مهما اختلف محتوى كل كارت (بعض المنتجات من غير وحدة سعر
+            فعّالة)، بدل ما الكروت تتفاوت في الطول وتبوّظ ترصيص الصفوف.
+            {% endcomment %}
             <a href="{% url 'store:product_detail' product.pk %}"
-               class="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-3 relative block">
+               class="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-3 relative flex flex-col h-full">
                 {% if request.user.is_authenticated and unit %}
                     {% with discount_percent=unit|discount_percent_for_client:request.user %}
                     {% if site_config.show_discounted_prices and discount_percent > 0 %}
@@ -165,24 +170,35 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
                         </svg>
                     {% endif %}
                 </div>
-                <p class="text-xs font-semibold text-gray-700 truncate">{{ product.name_ar }}</p>
-                {% if unit %}<p class="text-[10px] text-gray-400">{{ unit.name }}</p>{% endif %}
-                {% if request.user.is_authenticated %}
-                    {% if unit %}
-                        {% with discount_percent=unit|discount_percent_for_client:request.user %}
-                        <p class="text-sm font-bold text-primary-800 mt-1">
-                            {% if site_config.show_discounted_prices and discount_percent > 0 %}
-                                {{ unit|price_for_client:request.user }} ج.م
-                                <span class="text-[10px] text-gray-400 line-through font-normal">{{ unit.unit_price }}</span>
-                            {% else %}
-                                {{ unit.unit_price }} ج.م
-                            {% endif %}
-                        </p>
-                        {% endwith %}
+                {% comment %}
+                line-clamp-2 + min-h بدل truncate (سطر واحد) — عشان الاسم
+                الطويل ياخد نفس المساحة المحجوزة دايمًا (سطرين)، زي كارت
+                المتجر الأساسي product_card.html بالظبط.
+                {% endcomment %}
+                <p class="text-xs font-semibold text-gray-700 line-clamp-2 min-h-[2rem]">{{ product.name_ar }}</p>
+                {% comment %}
+                min-h ثابت لسطر الوحدة حتى لو مفيش unit، عشان كل الكروت
+                في الصف تفضل بنفس الارتفاع مهما كان عندها وحدة سعر أو لأ.
+                {% endcomment %}
+                <p class="text-[10px] text-gray-400 min-h-[1rem]">{% if unit %}{{ unit.name }}{% endif %}</p>
+                <div class="mt-auto pt-1">
+                    {% if request.user.is_authenticated %}
+                        {% if unit %}
+                            {% with discount_percent=unit|discount_percent_for_client:request.user %}
+                            <p class="text-sm font-bold text-primary-800">
+                                {% if site_config.show_discounted_prices and discount_percent > 0 %}
+                                    {{ unit|price_for_client:request.user }} ج.م
+                                    <span class="text-[10px] text-gray-400 line-through font-normal">{{ unit.unit_price }}</span>
+                                {% else %}
+                                    {{ unit.unit_price }} ج.م
+                                {% endif %}
+                            </p>
+                            {% endwith %}
+                        {% endif %}
+                    {% else %}
+                        <p class="text-[10px] text-gold-600">سجّل دخول لعرض السعر</p>
                     {% endif %}
-                {% else %}
-                    <p class="text-[10px] text-gold-600 mt-1">سجّل دخول لعرض السعر</p>
-                {% endif %}
+                </div>
             </a>
             {% endwith %}{% endwith %}
             {% endfor %}

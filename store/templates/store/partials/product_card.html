@@ -90,9 +90,11 @@
     {% elif unit %}
       {% with discount_percent=unit|discount_percent_for_client:request.user %}
       {% if site_config.show_discounted_prices and discount_percent > 0 %}
-        {# سعر بعد خصم فعلي: السعر الحالي بارز بالأخضر + سعر الجمهور بخط
-           مشطوب + بادچ نسبة الخصم — شكل كتالوج إلكتروني معتاد، بدل
-           سطرين منفصلين لسعرين (تصميم قديم كان بيكرر الخصم حتى لو 0%). #}
+        {% comment %}
+        سعر بعد خصم فعلي: السعر الحالي بارز بالأخضر + سعر الجمهور بخط
+        مشطوب + بادچ نسبة الخصم — شكل كتالوج إلكتروني معتاد، بدل
+        سطرين منفصلين لسعرين (تصميم قديم كان بيكرر الخصم حتى لو 0%).
+        {% endcomment %}
         <div class="flex items-baseline gap-1.5 flex-wrap mb-0.5">
           <p class="text-green-700 font-bold text-sm">{{ unit|price_for_client:request.user }} ج.م</p>
           <p class="text-gray-400 line-through text-xs">{{ unit.unit_price }} ج.م</p>
