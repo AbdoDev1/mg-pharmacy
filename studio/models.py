@@ -102,9 +102,9 @@ class StudioImage(models.Model):
     def __str__(self):
         return self.original_filename or f'صورة استوديو #{self.pk}'
 
-    def get_usage(self):
+    def get_usage(self, landing_settings=None):
         """
-        بترجع (منتجات، أقسام) الصورة دي مربوطة بيها حاليًا.
+        بترجع (منتجات، أقسام، تسميات Landing) الصورة دي مربوطة بيها حاليًا.
 
         المرحلة 8 (STUDIO_PLAN.md) نفّذت الربط الفعلي: Product.image
         وCategory.image بقوا ForeignKey على StudioImage، فالعلاقة العكسية
@@ -113,16 +113,41 @@ class StudioImage(models.Model):
         الافتراضي المذكور كمثال في نص الخطة الأصلي) عشان يتماشوا مع باقي
         أسماء العلاقات في المشروع (زي category.products، folder.images).
 
+        العنصر الثالث (landing_labels) اتضاف مع Phase 7 (صفحة الهبوط):
+        قائمة نصوص عربية بسيطة (مش أرقام) بتوصف أي مكان من صور/بانرات
+        الصفحة الرئيسية الصورة دي متحطة فيه حاليًا — مقارنة مباشرة بين
+        hero_image_id/banner_1_id/banner_2_id في LandingPageSettings و
+        self.pk، مش علاقة عكسية (LandingPageSettings سجل واحد بس، مفيش
+        داعي لـ related manager كامل).
+
+        landing_settings باراميتر اختياري: بيتقبل من برّا (view الاستوديو)
+        عشان يتجاب مرة واحدة فوق ويتبعت لكل صورة في حلقة الجاليري، بدل ما
+        كل صورة تعمل استعلام LandingPageSettings منفصل بنفسها (لحد 40
+        استعلام زيادة لكل صفحة). لو ماتحطش (استخدام فردي، is_used، أو
+        الاختبارات)، بيتجاب هنا بنفسه.
+
         فلتر مستخدمة/غير مستخدمة (المرحلة 4) وشاشة الحذف (المرحلة 5)
-        بيستخدموا الميثود دي زي ما هي، بلا أي تعديل إضافي مطلوب منهم —
-        الآلية كانت جاهزة بالكامل من وقتها زي ما كان متوقع.
+        بيستخدموا الميثود دي (عن طريق is_used تحت، أو مباشرة من الـ view)
+        وبقوا بياخدوا الـ landing labels في الاعتبار كمان.
         """
-        return list(self.products.all()), list(self.categories.all())
+        if landing_settings is None:
+            landing_settings = LandingPageSettings.objects.first()
+
+        landing_labels = []
+        if landing_settings is not None:
+            if landing_settings.hero_image_id == self.pk:
+                landing_labels.append('صورة الـ Hero بالصفحة الرئيسية')
+            if landing_settings.banner_1_id == self.pk:
+                landing_labels.append('البانر الأول بالصفحة الرئيسية')
+            if landing_settings.banner_2_id == self.pk:
+                landing_labels.append('البانر الثاني بالصفحة الرئيسية')
+
+        return list(self.products.all()), list(self.categories.all()), landing_labels
 
     @property
     def is_used(self):
-        products, categories = self.get_usage()
-        return bool(products) or bool(categories)
+        products, categories, landing_labels = self.get_usage()
+        return bool(products) or bool(categories) or bool(landing_labels)
 
     def save(self, *args, **kwargs):
         # تسجيل اسم الملف الأصلي تلقائيًا لو مش متحدد صراحة — يفيد وقت
@@ -171,3 +196,38 @@ class StudioImage(models.Model):
             self.thumbnail.save(f'{base_name}_thumb{ext}', ContentFile(buffer.getvalue()), save=False)
         except Exception:
             pass
+
+
+class LandingPageSettings(models.Model):
+    """
+    إعدادات الصور الاختيارية لصفحة الهبوط التسويقية (Phase 7). سجل واحد
+    فقط (id=1) — نفس فلسفة السجل الوحيد المستخدمة في orders.SiteConfig.
+
+    الصور بتتاخد من الاستوديو نفسه (StudioImage) بدل رفع منفصل — نفس
+    مصدر صور المنتجات/الأقسام، ونفس منتقي الصور (studio_picker) اللي
+    الموظف متعوّد عليه أصلًا.
+    """
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    hero_image = models.ForeignKey(
+        StudioImage, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='landing_hero_settings', verbose_name='صورة الـ Hero',
+    )
+    banner_1 = models.ForeignKey(
+        StudioImage, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='landing_banner_1_settings', verbose_name='البانر الأول',
+    )
+    banner_1_link = models.CharField(max_length=500, blank=True, verbose_name='رابط البانر الأول')
+    banner_2 = models.ForeignKey(
+        StudioImage, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='landing_banner_2_settings', verbose_name='البانر الثاني',
+    )
+    banner_2_link = models.CharField(max_length=500, blank=True, verbose_name='رابط البانر الثاني')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='آخر تحديث')
+
+    class Meta:
+        verbose_name = 'إعدادات الصفحة الرئيسية'
+        verbose_name_plural = 'إعدادات الصفحة الرئيسية'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)

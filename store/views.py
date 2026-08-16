@@ -8,6 +8,7 @@ from products.matching import normalize_name
 from products.new_arrivals import new_arrival_filter, NEW_ARRIVALS_WINDOW_DAYS
 from inventory.models import Inventory
 from orders.cart import Cart
+from studio.models import LandingPageSettings
 from django.db.models import Q, Case, When, Value, BooleanField, Count
 
 
@@ -153,9 +154,13 @@ def landing(request):
     - featured_products: أحدث 5 منتجات نشطة (الأصدق مع البيانات المتاحة
       فعليًا — مفيش حقل "الأكثر مبيعًا" في الموديل أصلًا، فالتصميم الأصلي
       اللي فيه عنوان "الأكثر طلبًا" اتغيّر عنوانه لـ"أحدث المنتجات" في
-      القالب عشان يبقى ادّعاء صحيح). بتتعرض بنفس partial الكارت المستخدم
-      في المتجر (product_card.html) بالظبط — نفس منطق إخفاء السعر قبل
-      تسجيل الدخول، ونفس بادچ الخصم، من غير أي تكرار أو اختلاف منطق.
+      القالب عشان يبقى ادّعاء صحيح). بتتعرض كعرض بسيط للاطّلاع بس (صورة
+      + اسم + سعر، بدون زرار "أضف للسلة") — بيوديك بالضغط على الكارت
+      لصفحة المنتج مباشرة. قرار متعمّد: صفحة اللاندينج مقصودة تفضل خفيفة
+      وبعيدة عن تعقيد إدارة حالة السلة، والشراء الفعلي بيحصل في المتجر
+      (/store/) اللي زرار "تسوق الآن" بيوديك له مباشرة.
+    - landing_settings: صور الـ Hero والبانرات الاختيارية (لو الموظف
+      اختارهم من الاستوديو) — راجع studio.models.LandingPageSettings.
     """
     categories = _categories_with_counts()
     featured_products = list(_base_products_queryset().order_by('-created_at')[:FEATURED_PRODUCTS_COUNT])
@@ -163,7 +168,7 @@ def landing(request):
         'categories': categories,
         'featured_products': featured_products,
         'total_products': Product.objects.filter(is_active=True).count(),
-        'cart_quantities': _cart_quantities(request),
+        'landing_settings': LandingPageSettings.objects.select_related('hero_image', 'banner_1', 'banner_2').first(),
     })
 
 

@@ -1,3 +1,5 @@
+import json
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -10,7 +12,7 @@ from django.views.decorators.http import require_POST
 from accounts.models import User
 from staff.permissions import perm_required
 from staff.utils import redirect_with_qs
-from studio.models import StudioFolder, StudioImage
+from studio.models import LandingPageSettings, StudioFolder, StudioImage
 from studio.validators import ALLOWED_IMAGE_EXTENSIONS, validate_image_size
 
 # نفس فكرة STAFF_LIST_PAGE_SIZE في staff/views/products/crud.py، بس بحجم
@@ -25,26 +27,38 @@ STUDIO_PICKER_PAGE_SIZE = 20
 _extension_validator = FileExtensionValidator(ALLOWED_IMAGE_EXTENSIONS)
 
 
-def _usage_confirm_message(products_count, categories_count):
+def _usage_confirm_message(products_count, categories_count, landing_labels=None):
     """
     رسالة تأكيد الحذف (المرحلة 5) — بتتبني من عدد المنتجات/الأقسام
-    المرتبطة (StudioImage.get_usage()). لو صفر في الاتنين بترجع رسالة
-    عامة بلا تفاصيل عدد. مبنية كدالة منفصلة عشان تُستخدم لكل صورة على
-    حدة (الحذف الفردي) ولمجموع صور محددة (الحذف الجماعي) بنفس المنطق.
+    المرتبطة (StudioImage.get_usage()) بالإضافة لتسميات استخدام الصورة في
+    صفحة الـ Landing لو موجودة (hero/بانر 1/بانر 2). لو صفر في كل حاجة
+    بترجع رسالة عامة بلا تفاصيل. مبنية كدالة منفصلة عشان تُستخدم لكل صورة
+    على حدة (الحذف الفردي) ولمجموع صور محددة (الحذف الجماعي) بنفس المنطق.
+
+    استخدام Landing بيتبني كجملة تحذير منفصلة عن جملة المنتجات/الأقسام —
+    لأن أثر الحذف مختلف (قسم كامل في الصفحة الرئيسية بيختفي، مش مجرد صورة
+    منتج بتفضغ فاضية).
 
     مفيش تفريق نحوي دقيق (مفرد/مثنى/جمع) هنا عمدًا — نفس مستوى البساطة
     المستخدم في باقي رسائل العدّ بالمشروع (زي "X صنف محدد").
     """
+    landing_labels = landing_labels or []
     parts = []
     if products_count:
         parts.append(f'{products_count} منتج')
     if categories_count:
         parts.append(f'{categories_count} قسم')
 
-    if not parts:
+    sentences = []
+    if parts:
+        sentences.append('هذه الصورة مستخدمة في ' + ' و'.join(parts) + '، وسيتم حذفها منهم أيضًا.')
+    if landing_labels:
+        sentences.append('هذه الصورة مستخدمة كـ ' + ' و'.join(landing_labels) + '، وسيختفي هذا القسم عند الحذف.')
+
+    if not sentences:
         return 'متأكد من حذف هذه الصورة؟'
 
-    return 'هذه الصورة مستخدمة في ' + ' و'.join(parts) + '، وسيتم حذفها منهم أيضًا. متأكد من الحذف؟'
+    return ' '.join(sentences) + ' متأكد من الحذف؟'
 
 
 @perm_required('studio.view_studioimage')
@@ -80,24 +94,37 @@ def studio(request):
 
     all_images = list(qs)
 
-    # بنحسب عدد المنتجات/الأقسام المرتبطة لكل صورة مرة واحدة هنا (بدل ما
-    # نستدعي get_usage() تاني في التمبليت لرسالة تأكيد الحذف، بعد ما
-    # is_used أصلًا استدعتها فوق) — وبنحطها كخاصية عادية على الكائن
-    # (مش حقل موديل) عشان الحذف الفردي (المرحلة 5) يقدر يبني رسالة
-    # التأكيد بلا استعلام إضافي وقت الضغط على الزرار.
+    # بنجيب LandingPageSettings مرة واحدة هنا فوق (بدل ما كل img.get_usage()
+    # يجيبها بنفسه) ونمررها لكل صورة — بيتفادى استعلام LandingPageSettings
+    # إضافي لكل صورة في حلقة الجاليري (لحد 40 استعلام زيادة لكل صفحة).
+    landing_settings = LandingPageSettings.objects.select_related('hero_image', 'banner_1', 'banner_2').first()
+
+    # بنحسب عدد المنتجات/الأقسام المرتبطة وتسميات استخدام الـ Landing لكل
+    # صورة مرة واحدة هنا (بدل ما نستدعي get_usage() تاني في التمبليت لرسالة
+    # تأكيد الحذف) — وبنحطهم كخصائص عادية على الكائن (مش حقول موديل) عشان
+    # الحذف الفردي (المرحلة 5) يقدر يبني رسالة التأكيد بلا استعلام إضافي
+    # وقت الضغط على الزرار. usage_is_used بقت بتاخد الـ landing labels في
+    # الاعتبار كمان (صورة مستخدمة كـ Hero بس، بلا أي منتج/قسم، لازم تتحسب
+    # "مستخدمة").
     for img in all_images:
-        products, categories = img.get_usage()
+        products, categories, landing_labels_for_img = img.get_usage(landing_settings)
         img.usage_products_count = len(products)
         img.usage_categories_count = len(categories)
+        img.usage_landing_labels = landing_labels_for_img
+        # نسخة JSON جاهزة (مش تمثيل str() الافتراضي لقائمة بايثون) عشان
+        # تتضمن مباشرة جوه خريطة usage في JS بتاعة confirmMessage() الجماعية
+        # بلا أي مشاكل quoting مع النص العربي.
+        img.usage_landing_labels_json = json.dumps(landing_labels_for_img, ensure_ascii=False)
+        img.usage_is_used = bool(products) or bool(categories) or bool(landing_labels_for_img)
         img.usage_confirm_message = _usage_confirm_message(
-            img.usage_products_count, img.usage_categories_count,
+            img.usage_products_count, img.usage_categories_count, landing_labels_for_img,
         )
 
     usage_filter = request.GET.get('usage', '')
     if usage_filter == 'used':
-        images = [img for img in all_images if img.usage_products_count or img.usage_categories_count]
+        images = [img for img in all_images if img.usage_is_used]
     elif usage_filter == 'unused':
-        images = [img for img in all_images if not (img.usage_products_count or img.usage_categories_count)]
+        images = [img for img in all_images if not img.usage_is_used]
     else:
         images = all_images
 
@@ -111,7 +138,44 @@ def studio(request):
         'usage_filter': usage_filter,
         'folder_filter': folder_filter,
         'folders': StudioFolder.objects.all(),
+        'landing_settings': landing_settings,
     })
+
+
+@perm_required('studio.change_studioimage')
+@require_POST
+def landing_settings_save(request):
+    """حفظ صور الـ Landing Page وروابط البانرات من داخل الاستوديو."""
+    def image_from_post(name):
+        value = request.POST.get(name, '').strip()
+        if not value:
+            return None
+        if not value.isdigit():
+            return None
+        return StudioImage.objects.filter(pk=int(value)).first()
+
+    hero_image = image_from_post('hero_image')
+    banner_1 = image_from_post('banner_1')
+    banner_2 = image_from_post('banner_2')
+    # لو المستخدم أرسل معرفًا غير موجود، نرفض الحفظ بدل ما نخفي خطأ اختيار الصورة.
+    for field_name, raw_value, image in (
+        ('hero_image', request.POST.get('hero_image', '').strip(), hero_image),
+        ('banner_1', request.POST.get('banner_1', '').strip(), banner_1),
+        ('banner_2', request.POST.get('banner_2', '').strip(), banner_2),
+    ):
+        if raw_value and (not raw_value.isdigit() or image is None):
+            messages.error(request, f'معرّف الصورة في {field_name} غير صالح.')
+            return redirect('staff:studio')
+
+    settings_obj, _ = LandingPageSettings.objects.get_or_create(pk=1)
+    settings_obj.hero_image = hero_image
+    settings_obj.banner_1 = banner_1
+    settings_obj.banner_1_link = request.POST.get('banner_1_link', '').strip()[:500]
+    settings_obj.banner_2 = banner_2
+    settings_obj.banner_2_link = request.POST.get('banner_2_link', '').strip()[:500]
+    settings_obj.save()
+    messages.success(request, 'تم تحديث صور وبنرات الصفحة الرئيسية.')
+    return redirect('staff:studio')
 
 
 @perm_required('studio.add_studioimage')

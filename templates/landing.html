@@ -43,10 +43,17 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
                 {% endif %}
             </div>
         </div>
-        <div class="hidden md:flex items-center justify-center text-gold-400/90">
-            <svg class="w-40 h-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L1.5 3l1.5-1.5L7.5 4.5v1.409l4.354 3.354m0 0a3.001 3.001 0 00-1.5 2.836" />
-            </svg>
+        <div class="flex items-center justify-center">
+            {% if landing_settings.hero_image %}
+                <img src="{{ landing_settings.hero_image.image.url }}" alt="MG Pharmacy"
+                     class="w-full max-w-md max-h-80 object-cover rounded-2xl shadow-xl">
+            {% else %}
+                <div class="hidden md:flex items-center justify-center text-gold-400/90">
+                    <svg class="w-40 h-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L1.5 3l1.5-1.5L7.5 4.5v1.409l4.354 3.354m0 0a3.001 3.001 0 00-1.5 2.836" />
+                    </svg>
+                </div>
+            {% endif %}
         </div>
     </div>
 
@@ -107,12 +114,27 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
 </div>
 {% endif %}
 
-<!-- أحدث المنتجات — منتجات حقيقية (أحدث 5 نشطة)، بنفس كارت المتجر
-     بالظبط (product_card.html) عشان يفضل نفس منطق إخفاء السعر قبل
-     تسجيل الدخول وبادچ الخصم من غير أي تكرار أو اختلاف. ملحوظة: التصميم
-     المُقترَح كان مسمّيها "الأكثر طلبًا"، لكن مفيش تتبّع فعلي للمبيعات في
-     الموديل حاليًا، فالاسم اتغيّر لـ"أحدث المنتجات" عشان يبقى وصف صحيح
-     لمصدر البيانات الفعلي (مش ادّعاء غير حقيقي). -->
+<!-- Banner اختياري (لو الموظف اختار صورة من الاستوديو للـ Banner الأول) —
+     بيختفي تمامًا لو مفيش صورة مختارة، بدل ما يعرض مكان فاضي. -->
+{% if landing_settings.banner_1 %}
+<div class="max-w-7xl mx-auto px-4 py-4">
+    {% if landing_settings.banner_1_link %}<a href="{{ landing_settings.banner_1_link }}">{% endif %}
+    <img src="{{ landing_settings.banner_1.image.url }}" alt="MG Pharmacy"
+         class="w-full max-h-72 object-cover rounded-2xl shadow-md" loading="lazy">
+    {% if landing_settings.banner_1_link %}</a>{% endif %}
+</div>
+{% endif %}
+
+<!-- أحدث المنتجات — منتجات حقيقية (أحدث 5 نشطة). عرض بسيط للاطّلاع بس
+     (صورة + اسم + سعر) بدون زرار "أضف للسلة" — قرار متعمّد إن صفحة
+     اللاندينج تفضل خفيفة وبعيدة عن تعقيد إدارة حالة السلة، والكارت كله
+     رابط لصفحة المنتج مباشرة. السعر بيتحسب بنفس منطق المتجر بالظبط
+     (units_for_client/price_for_client/discount_percent_for_client —
+     نفس الفلاتر المستخدمة في product_card.html، من غير تكرار منطق
+     تسعير منفصل)، ومختفي تمامًا لغير المسجّل دخوله زي باقي الموقع.
+     ملحوظة: التصميم المُقترَح كان مسمّيها "الأكثر طلبًا"، لكن مفيش تتبّع
+     فعلي للمبيعات في الموديل حاليًا، فالاسم اتغيّر لـ"أحدث المنتجات"
+     عشان يبقى وصف صحيح لمصدر البيانات الفعلي (مش ادّعاء غير حقيقي). -->
 {% if featured_products %}
 <div class="bg-gray-50 py-12">
     <div class="max-w-7xl mx-auto px-4">
@@ -123,7 +145,46 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         </div>
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {% for product in featured_products %}
-                {% include 'store/partials/product_card.html' %}
+            {% with units=product|units_for_client:request.user %}{% with unit=units.0 %}
+            <a href="{% url 'store:product_detail' product.pk %}"
+               class="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-3 relative block">
+                {% if request.user.is_authenticated and unit %}
+                    {% with discount_percent=unit|discount_percent_for_client:request.user %}
+                    {% if site_config.show_discounted_prices and discount_percent > 0 %}
+                        <span class="absolute top-4 right-4 bg-gold-500 text-primary-900 text-[10px] font-bold rounded-full px-2 py-0.5">-{{ discount_percent|floatformat:0 }}%</span>
+                    {% endif %}
+                    {% endwith %}
+                {% endif %}
+                <div class="aspect-square bg-gray-50 rounded-xl overflow-hidden flex items-center justify-center mb-2">
+                    {% if product.image %}
+                        <img src="{% if product.image.thumbnail %}{{ product.image.thumbnail.url }}{% else %}{{ product.image.image.url }}{% endif %}"
+                             alt="{{ product.name_ar }}" loading="lazy" class="w-full h-full object-contain">
+                    {% else %}
+                        <svg class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+                        </svg>
+                    {% endif %}
+                </div>
+                <p class="text-xs font-semibold text-gray-700 truncate">{{ product.name_ar }}</p>
+                {% if unit %}<p class="text-[10px] text-gray-400">{{ unit.name }}</p>{% endif %}
+                {% if request.user.is_authenticated %}
+                    {% if unit %}
+                        {% with discount_percent=unit|discount_percent_for_client:request.user %}
+                        <p class="text-sm font-bold text-primary-800 mt-1">
+                            {% if site_config.show_discounted_prices and discount_percent > 0 %}
+                                {{ unit|price_for_client:request.user }} ج.م
+                                <span class="text-[10px] text-gray-400 line-through font-normal">{{ unit.unit_price }}</span>
+                            {% else %}
+                                {{ unit.unit_price }} ج.م
+                            {% endif %}
+                        </p>
+                        {% endwith %}
+                    {% endif %}
+                {% else %}
+                    <p class="text-[10px] text-gold-600 mt-1">سجّل دخول لعرض السعر</p>
+                {% endif %}
+            </a>
+            {% endwith %}{% endwith %}
             {% endfor %}
         </div>
         <div class="text-center mt-8">
@@ -133,6 +194,16 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
             </a>
         </div>
     </div>
+</div>
+{% endif %}
+
+<!-- Banner اختياري ثانٍ (قبل قسم Benefits) — نفس منطق البانر الأول تمامًا. -->
+{% if landing_settings.banner_2 %}
+<div class="max-w-7xl mx-auto px-4 py-4">
+    {% if landing_settings.banner_2_link %}<a href="{{ landing_settings.banner_2_link }}">{% endif %}
+    <img src="{{ landing_settings.banner_2.image.url }}" alt="MG Pharmacy"
+         class="w-full max-h-72 object-cover rounded-2xl shadow-md" loading="lazy">
+    {% if landing_settings.banner_2_link %}</a>{% endif %}
 </div>
 {% endif %}
 
