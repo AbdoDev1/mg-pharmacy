@@ -8,7 +8,7 @@ from products.matching import normalize_name
 from products.new_arrivals import new_arrival_filter, NEW_ARRIVALS_WINDOW_DAYS
 from inventory.models import Inventory
 from orders.cart import Cart
-from django.db.models import Q, Case, When, Value, BooleanField
+from django.db.models import Q, Case, When, Value, BooleanField, Count
 
 
 def _cart_quantities(request):
@@ -87,8 +87,24 @@ def _manufacturers_list():
     )
 
 
+def _categories_with_counts():
+    """
+    الأقسام النشطة فقط، معلَّم عليها عدد المنتجات النشطة الفعلي (product_count)
+    — تُستخدم في كروت "تصفح حسب الفئة" على الصفحة الرئيسية (المرحلة 4)
+    عشان الرقم الظاهر تحت كل قسم يبقى حقيقي من قاعدة البيانات مش hardcoded.
+    select_related('image') لتفادي استعلام إضافي لكل قسم وقت عرض صورته
+    (studio.StudioImage) في القالب.
+    """
+    return (
+        Category.objects.filter(is_active=True)
+        .select_related('image')
+        .annotate(product_count=Count('products', filter=Q(products__is_active=True)))
+        .order_by('name')
+    )
+
+
 def store_home(request):
-    categories = Category.objects.filter(is_active=True)
+    categories = _categories_with_counts()
     products, selected_category, selected_manufacturer, search_q = _apply_filters(
         _base_products_queryset(), request
     )
@@ -120,6 +136,35 @@ def store_home(request):
 
 def store_search(request):
     return store_home(request)
+
+
+FEATURED_PRODUCTS_COUNT = 5
+
+
+def landing(request):
+    """
+    صفحة الهبوط التسويقية (Phase 7 — ROADMAP.md) — بتفتح على `/` لكل
+    الزوار (مسجّلين أو لأ)، عدا الموظفين (ADMIN/WAREHOUSE) اللي بيتوجّهوا
+    مباشرة للوحة التحكم زي ما هو موثّق في config/urls.py:home().
+
+    كل المحتوى هنا حقيقي من قاعدة البيانات — مفيش رقم أو منتج وهمي:
+    - categories: نفس _categories_with_counts() المستخدمة في كروت "تصفح
+      حسب الفئة" بالصفحة الرئيسية للمتجر (Phase 4) — نفس مصدر الحقيقة.
+    - featured_products: أحدث 5 منتجات نشطة (الأصدق مع البيانات المتاحة
+      فعليًا — مفيش حقل "الأكثر مبيعًا" في الموديل أصلًا، فالتصميم الأصلي
+      اللي فيه عنوان "الأكثر طلبًا" اتغيّر عنوانه لـ"أحدث المنتجات" في
+      القالب عشان يبقى ادّعاء صحيح). بتتعرض بنفس partial الكارت المستخدم
+      في المتجر (product_card.html) بالظبط — نفس منطق إخفاء السعر قبل
+      تسجيل الدخول، ونفس بادچ الخصم، من غير أي تكرار أو اختلاف منطق.
+    """
+    categories = _categories_with_counts()
+    featured_products = list(_base_products_queryset().order_by('-created_at')[:FEATURED_PRODUCTS_COUNT])
+    return render(request, 'landing.html', {
+        'categories': categories,
+        'featured_products': featured_products,
+        'total_products': Product.objects.filter(is_active=True).count(),
+        'cart_quantities': _cart_quantities(request),
+    })
 
 
 @login_required
@@ -171,14 +216,19 @@ def product_detail(request, pk):
         pk=pk,
     )
     # صفحة منتج واحد بس (مش شبكة متجر)، فمفيش قلق أداء من استعلام إضافي هنا.
-    # units_for_client بيحدد الوحدة (أو الوحدات) اللي تظهر لنوع الحساب ده:
-    # قطاعي = أصغر وحدة، جملة = أكبر وحدة.
+    # المرحلة 6: العميل بيختار الوحدة بنفسه دلوقتي (شوف product_detail.html)،
+    # فبنمرّر *كل* وحدات المنتج (units_for_selection) بدل وحدة واحدة بس.
+    # default_unit لسه بتتحسب زي الأول (units_for_client) — بس دلوقتي
+    # معناها "الاختيار المبدئي وقت ما الصفحة تفتح" مش "الوحدة الوحيدة
+    # المتاحة"؛ العميل حر يبدّلها لأي وحدة تانية من الأزرار في القالب.
     # ملحوظة: المخزون بقى على مستوى المنتج (product.inventory) مش الوحدة —
     # ما بنعملش وصول مباشر ليه هنا في كود بايثون، لأن منتج جديد لسه ماتفتحش
     # له مخزون هيعمل RelatedObjectDoesNotExist. القالب بيوصل لـ product.inventory
     # بأمان (Django بيتعامل مع الغياب ده silently جوه التمبليت).
     client = request.user if request.user.is_authenticated else None
-    units = product.units_for_client(client)
+    units = product.units_for_selection()
+    default_unit = product.units_for_client(client)
+    default_unit_id = default_unit[0].pk if default_unit else None
     # نفلتر على is_active بايثونيًا (مش .filter() جديد) عشان نستفيد من
     # الـ prefetch_related الجاهز فوق بدل ما نضرب استعلام إضافي لكل قسم.
     similar_products = [p for p in product.similar_products.all() if p.is_active][:6]
@@ -186,6 +236,7 @@ def product_detail(request, pk):
     return render(request, 'store/product_detail.html', {
         'product': product,
         'units': units,
+        'default_unit_id': default_unit_id,
         'cart_quantities': _cart_quantities(request),
         'similar_products': similar_products,
         'complementary_products': complementary_products,

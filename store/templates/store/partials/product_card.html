@@ -88,14 +88,23 @@
         يرجى تسجيل الدخول لعرض السعر
       </a>
     {% elif unit %}
-      <p class="text-gray-800 font-bold text-sm {% if site_config.show_discounted_prices %}mb-0.5{% else %}mb-2{% endif %}">
-        {{ unit.unit_price }} ج.م <span class="text-gray-400 font-normal text-xs">/ {{ unit.name }}</span>
-      </p>
-      {% if site_config.show_discounted_prices %}
-        {% with price=unit|price_for_client:request.user %}
-          <p class="text-green-700 font-bold text-sm mb-2">{{ price }} ج.م <span class="text-gray-400 font-normal text-xs">سعرك بعد الخصم</span></p>
-        {% endwith %}
+      {% with discount_percent=unit|discount_percent_for_client:request.user %}
+      {% if site_config.show_discounted_prices and discount_percent > 0 %}
+        {# سعر بعد خصم فعلي: السعر الحالي بارز بالأخضر + سعر الجمهور بخط
+           مشطوب + بادچ نسبة الخصم — شكل كتالوج إلكتروني معتاد، بدل
+           سطرين منفصلين لسعرين (تصميم قديم كان بيكرر الخصم حتى لو 0%). #}
+        <div class="flex items-baseline gap-1.5 flex-wrap mb-0.5">
+          <p class="text-green-700 font-bold text-sm">{{ unit|price_for_client:request.user }} ج.م</p>
+          <p class="text-gray-400 line-through text-xs">{{ unit.unit_price }} ج.م</p>
+          <span class="bg-red-50 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded">خصم {{ discount_percent|floatformat:0 }}%</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-2">/ {{ unit.name }}</p>
+      {% else %}
+        <p class="text-gray-800 font-bold text-sm mb-2">
+          {{ unit.unit_price }} ج.م <span class="text-gray-400 font-normal text-xs">/ {{ unit.name }}</span>
+        </p>
       {% endif %}
+      {% endwith %}
 
       {% if request.user.role == 'CLIENT' and request.user.status == 'ACTIVE' %}
         {% if inv and inv.is_available %}

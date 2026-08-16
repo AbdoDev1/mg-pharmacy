@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 from django.shortcuts import redirect, render
 from django.http import HttpResponse
 from django.views.generic.base import RedirectView
-from store.views import store_home
+from store.views import landing
 
 def healthz(request):
     """
@@ -17,14 +17,15 @@ def healthz(request):
     return HttpResponse('ok')
 
 def home(request):
-    # الصفحة الرئيسية (/) هي "Biozone" نفسها — بتعرض محتوى المتجر مباشرة
-    # (استدعاء الفيو نفسه، مش إعادة توجيه) عشان تبقى صفحة حقيقية قابلة
-    # للفهرسة من جوجل مستقبلًا (تهيئة لـ SEO). لو عايز تفتح /store/ بنفسك
-    # لسه شغالة برضو (نفس الفيو)، بس الدومين الرئيسي دلوقتي بيعرض المحتوى
-    # فورًا من غير أي redirect.
+    # المرحلة 7 (ROADMAP.md): الدومين الرئيسي (/) بقى صفحة هبوط تسويقية
+    # (landing.html) بدل المتجر مباشرة — لكل الزوار (مسجّلين أو لأ) عدا
+    # الموظفين، اللي لسه بيتوجّهوا لداشبورد لوحة التحكم زي ما كان بالظبط
+    # قبل المرحلة دي (السطر ده مالوش علاقة بقرار اللاندينج، موجود من قبلها).
+    # المتجر الفعلي فضل شغال بنفس المنطق بالظبط على /store/ (store.urls)،
+    # وأي زرار "تسوق الآن" في اللاندينج بيوديك له مباشرة.
     if request.user.is_authenticated and request.user.role in ['ADMIN', 'WAREHOUSE']:
         return redirect('staff:dashboard')
-    return store_home(request)
+    return landing(request)
 
 class LegacyCatalogRedirect(RedirectView):
     """تحويل دائم (301) لأي رابط قديم كان بادئ بـ /catalog/ إلى /store/

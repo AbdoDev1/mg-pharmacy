@@ -27,6 +27,24 @@ def price_for_client(unit, user):
     return unit.get_price_for_client(client)
 
 
+@register.filter
+def discount_percent_for_client(unit, user):
+    """
+    نسبة الخصم (لو موجودة) لهذه الوحدة حسب نوع حساب العميل — 0 لو مفيش خصم
+    مسجّل لهذا الصنف أو العميل مش مسجّل دخول. المصدر get_pricing_breakdown_for_client
+    (نفس المصدر الوحيد للتسعير المستخدم في السلة/الطلب/الفاتورة) عشان النسبة
+    المعروضة كبادچ في كارت المتجر (المرحلة 5) تفضل متطابقة مع السعر الفعلي
+    اللي هيتحسب وقت الشراء، بدل ما تتحسب بشكل منفصل وتختلف بالغلط.
+    """
+    if unit is None:
+        return 0
+    client = user if getattr(user, 'is_authenticated', False) else None
+    if client is None:
+        return 0
+    _, discount_percent, _ = unit.get_pricing_breakdown_for_client(client)
+    return discount_percent
+
+
 def _client_of(user):
     return user if getattr(user, 'is_authenticated', False) else None
 

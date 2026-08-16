@@ -63,49 +63,78 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
           {% endif %}
 
 
-          <!-- الوحدات والأسعار -->
+          <!-- الوحدة والسعر -->
           <div class="space-y-3">
-            <h2 class="font-bold text-gray-700">الوحدات المتاحة</h2>
+            <h2 class="font-bold text-gray-700">الوحدة</h2>
             {% load cart_tags %}
-            {% for unit in units %}
-            <div class="border border-gray-200 rounded-xl p-4 flex flex-col gap-3">
-              <p class="font-semibold text-gray-800">{{ unit.name }}</p>
 
-              {% if not request.user.is_authenticated %}
-                {# لا يظهر السعر أو خيار الشراء قبل تسجيل الدخول #}
-                <a href="{% url 'accounts:register' %}"
-                   class="bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg transition text-center">
-                  يرجى تسجيل الدخول لعرض السعر وإتمام الطلب
-                </a>
-              {% else %}
-                <!-- السعر + الكمية -->
-                <div class="flex flex-row-reverse items-center justify-between gap-4">
-                  <div class="text-right">
-                    <p class="text-gray-800 font-bold text-lg">{{ unit.unit_price }} ج.م</p>
-                    {% if site_config.show_discounted_prices %}
-                      {% with price=unit|price_for_client:request.user %}
-                        <p class="text-green-700 font-bold text-sm">{{ price }} ج.م <span class="text-gray-400 font-normal text-xs">سعرك بعد الخصم</span></p>
-                      {% endwith %}
-                    {% endif %}
-                  </div>
+            {% if not units %}
+              <p class="text-sm text-gray-400">مفيش وحدات بيع متاحة لهذا المنتج حاليًا.</p>
+            {% elif not request.user.is_authenticated %}
+              {# لا يظهر السعر أو خيار الشراء قبل تسجيل الدخول — رسالة واحدة
+                 بغض النظر عن عدد الوحدات، لأن المحتوى واحد سواء عنده وحدة
+                 أو أكتر. #}
+              <a href="{% url 'accounts:register' %}"
+                 class="block bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg transition text-center">
+                يرجى تسجيل الدخول لعرض السعر وإتمام الطلب
+              </a>
+            {% else %}
+              <!-- المرحلة 6: العميل يختار الوحدة بنفسه (بدل اختيار تلقائي
+                   واحد بس حسب نوع حسابه). كل الوحدات بأسعارها وخصومها
+                   وحالة توفرها متحسوبة من السيرفر مسبقًا زي ما هي بالظبط —
+                   Alpine هنا بيبدّل أي لوحة ظاهرة بس (x-show)، مفيش أي إعادة
+                   حساب سعر في الـ JS، فمستحيل يختلف السعر المعروض عن اللي
+                   هيتحسب فعليًا وقت الإضافة للسلة. -->
+              <div x-data="{ selected: '{{ default_unit_id|default:units.0.pk }}' }">
+
+                {% if units|length > 1 %}
+                <div class="flex gap-2 flex-wrap mb-3" role="radiogroup" aria-label="اختر الوحدة">
+                  {% for unit in units %}
+                  <button type="button"
+                          role="radio"
+                          :aria-checked="selected === '{{ unit.pk }}'"
+                          @click="selected = '{{ unit.pk }}'"
+                          :class="selected === '{{ unit.pk }}' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'"
+                          class="px-4 py-2 rounded-xl border text-sm font-semibold transition">
+                    {{ unit.name }}
+                  </button>
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {% with inv=product.inventory %}
+                {% for unit in units %}
+                <div x-show="selected === '{{ unit.pk }}'" x-cloak
+                     class="border border-gray-200 rounded-xl p-4">
+
+                  {% with discount_percent=unit|discount_percent_for_client:request.user %}
+                  {% if site_config.show_discounted_prices and discount_percent > 0 %}
+                    <div class="flex items-baseline gap-1.5 flex-wrap mb-0.5">
+                      <p class="text-green-700 font-bold text-lg">{{ unit|price_for_client:request.user }} ج.م</p>
+                      <p class="text-gray-400 line-through text-sm">{{ unit.unit_price }} ج.م</p>
+                      <span class="bg-red-50 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded">خصم {{ discount_percent|floatformat:0 }}%</span>
+                    </div>
+                  {% else %}
+                    <p class="text-gray-800 font-bold text-lg mb-0.5">{{ unit.unit_price }} ج.م</p>
+                  {% endif %}
+                  {% endwith %}
 
                   {% if request.user.role == 'CLIENT' and request.user.status == 'ACTIVE' %}
-                    {% with inv=product.inventory %}
                     {% if inv and inv.is_available %}
                       {% with quantity=cart_quantities|get_item:unit.pk %}
                         {% include "orders/partials/cart_controls.html" with unit_id=unit.pk quantity=quantity|default:0 %}
                       {% endwith %}
                     {% else %}
-                      <button disabled class="mt-2 bg-gray-100 text-gray-400 text-xs py-2 px-4 rounded-lg cursor-not-allowed">
+                      <button disabled class="mt-2 w-full bg-gray-100 text-gray-400 text-xs py-2 px-4 rounded-lg cursor-not-allowed">
                         غير متوفر حالياً
                       </button>
                     {% endif %}
-                    {% endwith %}
                   {% endif %}
                 </div>
-              {% endif %}
-            </div>
-            {% endfor %}
+                {% endfor %}
+                {% endwith %}
+              </div>
+            {% endif %}
           </div>
 
         </div>

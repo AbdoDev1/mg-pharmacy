@@ -1,4 +1,11 @@
 {% if products %}
+<!-- عدّاد نتائج ظاهر فوق الشبكة — رقم حقيقي من paginator.count (مش
+     تقريبي)، بيتحدّث لوحده مع كل فلترة/بحث لأن الجزئية دي بتتبدّل
+     بالكامل عبر htmx (hx-target="#product-grid") مع كل طلب. -->
+<div class="flex items-center justify-between mb-4 text-sm text-gray-500">
+  <p>{{ page_obj.paginator.count }} منتج</p>
+</div>
+
 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
   {% for product in products %}
     {% include 'store/partials/product_card.html' %}
@@ -42,7 +49,18 @@
 {% endif %}
 
 {% else %}
+<!-- حالة "لا نتائج" — أيقونة + رسالة + اقتراح واضح (مسح الفلاتر)،
+     بدل جملة نص لوحدها. الرابط بيرجّع لنفس صفحة الفلترة (grid_url)
+     من غير أي query params. -->
 <div class="text-center py-20 text-gray-400">
-  <p class="text-xl">لا توجد منتجات مطابقة</p>
+  <svg class="w-14 h-14 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m-3-3h6"/>
+  </svg>
+  <p class="text-lg font-semibold text-gray-500 mb-1">لا توجد منتجات مطابقة</p>
+  <p class="text-sm text-gray-400 mb-4">جرّب كلمة بحث مختلفة أو امسح الفلاتر</p>
+  <a href="{% url grid_url|default:'store:home' %}"
+     class="inline-block text-primary-600 text-sm font-semibold hover:underline">
+    عرض كل المنتجات
+  </a>
 </div>
 {% endif %}

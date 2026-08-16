@@ -1,29 +1,209 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MG Pharmacy</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%230D2B5B%22/><text x=%2212%22 y=%2217%22 font-size=%2214%22 font-family=%22sans-serif%22 font-weight=%22bold%22 fill=%22%23E0B74E%22 text-anchor=%22middle%22>M</text></svg>">
-    <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
-    <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
-    <style>body { font-family: 'Cairo', system-ui, sans-serif; }</style>
-</head>
-<body class="bg-surface-page min-h-screen flex items-center justify-center">
-    <div class="text-center">
-        <h1 class="text-4xl font-bold text-primary-700 mb-2">MG Pharmacy</h1>
-        <p class="text-gray-500 mb-10">نظام إدارة المستلزمات الطبية</p>
-        <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center items-center px-4">
-            <a href="{% url 'accounts:login' %}"
-               class="w-full sm:w-auto bg-primary-600 hover:bg-primary-700 text-white font-semibold px-8 py-3 rounded-xl transition text-lg text-center">
-                صفحة العملاء
-            </a>
-            <a href="{% url 'staff:login' %}"
-               class="w-full sm:w-auto bg-gray-800 hover:bg-gray-900 text-white font-semibold px-8 py-3 rounded-xl transition text-lg text-center">
-               صفحة المخزن
+{% extends 'base.html' %}
+{% load cart_tags %}
+
+{% block title %}MG Pharmacy | صيدليتك الأقرب إليك{% endblock %}
+
+{% block extra_head %}
+<meta name="description" content="MG Pharmacy — صيدليتك الأقرب إليك: أدوية ومنتجات صحية، مستلزمات طبية، عناية شخصية ومكملات، مع تجربة طلب سهلة.">
+<link rel="canonical" href="{{ request.scheme }}://{{ request.get_host }}/">
+{% endblock %}
+
+{% block body_attrs %}
+hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#cart-badge',swap:'innerHTML'})"
+{% endblock %}
+
+{% block content %}
+
+<!-- Hero — نفس روح التصميم المُقترَح من المستخدم (Navy/Gold)، بس بـ
+     Tailwind زي باقي الموقع بدل CSS منفصل، عشان يفضل نفس نظام التصميم
+     الموحّد في كل صفحة (tailwind.config.js نفسه اللي فيه primary/gold
+     أصلًا من Phase 1). -->
+<div class="bg-gradient-to-b from-primary-800 via-primary-700 to-primary-800 text-white">
+    <div class="max-w-7xl mx-auto px-4 py-14 md:py-20 grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+        <div class="text-center md:text-right">
+            <p class="text-gold-400 font-extrabold text-lg mb-1">نحن أقرب إليك</p>
+            <h1 class="text-3xl md:text-4xl font-bold leading-relaxed mb-4">
+                كل احتياجاتك الصحية<br>في مكان واحد
+            </h1>
+            <p class="text-primary-100 leading-loose mb-6 max-w-md mx-auto md:mx-0">
+                أدوية ومنتجات صحية، مستلزمات طبية، عناية شخصية ومكملات —
+                {% if total_products %}أكثر من {{ total_products }} منتج متاح، {% endif %}
+                مع تجربة طلب سهلة.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center md:justify-start">
+                <a href="{% url 'store:home' %}"
+                   class="bg-gold-500 hover:bg-gold-600 text-primary-900 font-bold px-7 py-3 rounded-xl transition text-center">
+                    تسوق الآن
+                </a>
+                {% if categories %}
+                <a href="#categories"
+                   class="border border-white/70 hover:bg-white/10 text-white font-bold px-7 py-3 rounded-xl transition text-center">
+                    تصفح الأقسام
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="hidden md:flex items-center justify-center text-gold-400/90">
+            <svg class="w-40 h-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L1.5 3l1.5-1.5L7.5 4.5v1.409l4.354 3.354m0 0a3.001 3.001 0 00-1.5 2.836" />
+            </svg>
+        </div>
+    </div>
+
+    <!-- Trust badges — قيم عامة وصفية، مفيش أي رقم أو إحصائية بنّدعيها هنا. -->
+    <div class="max-w-7xl mx-auto px-4 pb-10">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="bg-white/10 rounded-xl p-4 text-center">
+                <p class="font-bold text-sm mb-0.5">توصيل سريع</p>
+                <p class="text-primary-200 text-xs">داخل نطاق الخدمة</p>
+            </div>
+            <div class="bg-white/10 rounded-xl p-4 text-center">
+                <p class="font-bold text-sm mb-0.5">منتجات موثوقة</p>
+                <p class="text-primary-200 text-xs">جودة واهتمام</p>
+            </div>
+            <div class="bg-white/10 rounded-xl p-4 text-center">
+                <p class="font-bold text-sm mb-0.5">استشارات صيدلية</p>
+                <p class="text-primary-200 text-xs">لمساعدتك</p>
+            </div>
+            <div class="bg-white/10 rounded-xl p-4 text-center">
+                <p class="font-bold text-sm mb-0.5">دفع آمن</p>
+                <p class="text-primary-200 text-xs">وسائل متعددة</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- تسوق حسب الفئة — نفس مصدر ونمط كروت Phase 4 بالظبط (نفس الأيقونة
+     الافتراضية والصورة لو موجودة وعدد المنتجات الحقيقي)، بس هنا معروضة
+     بشكل أبرز كقسم رئيسي في صفحة الهبوط. -->
+{% if categories %}
+<div id="categories" class="max-w-7xl mx-auto px-4 py-12">
+    <div class="text-center mb-8">
+        <h2 class="text-2xl font-bold text-primary-800">تسوق حسب الفئة</h2>
+        <div class="w-11 h-1 bg-gold-500 mx-auto mt-2 mb-3"></div>
+        <p class="text-gray-500 text-sm">اختار القسم المناسب ووصل لمنتجاتك بسرعة</p>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+        {% for cat in categories %}
+        <a href="{% url 'store:home' %}?category={{ cat.slug }}"
+           class="flex flex-col items-center gap-2 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-4 text-center">
+            <div class="w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center overflow-hidden shrink-0">
+                {% if cat.image %}
+                <img src="{% if cat.image.thumbnail %}{{ cat.image.thumbnail.url }}{% else %}{{ cat.image.image.url }}{% endif %}"
+                     alt="{{ cat.name }}" loading="lazy" class="w-full h-full object-cover">
+                {% else %}
+                <svg class="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+                </svg>
+                {% endif %}
+            </div>
+            <div class="min-w-0 w-full">
+                <p class="text-xs font-semibold text-gray-700 truncate">{{ cat.name }}</p>
+                <p class="text-[10px] text-gray-400">{{ cat.product_count }} منتج</p>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- أحدث المنتجات — منتجات حقيقية (أحدث 5 نشطة)، بنفس كارت المتجر
+     بالظبط (product_card.html) عشان يفضل نفس منطق إخفاء السعر قبل
+     تسجيل الدخول وبادچ الخصم من غير أي تكرار أو اختلاف. ملحوظة: التصميم
+     المُقترَح كان مسمّيها "الأكثر طلبًا"، لكن مفيش تتبّع فعلي للمبيعات في
+     الموديل حاليًا، فالاسم اتغيّر لـ"أحدث المنتجات" عشان يبقى وصف صحيح
+     لمصدر البيانات الفعلي (مش ادّعاء غير حقيقي). -->
+{% if featured_products %}
+<div class="bg-gray-50 py-12">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="text-center mb-8">
+            <h2 class="text-2xl font-bold text-primary-800">أحدث المنتجات</h2>
+            <div class="w-11 h-1 bg-gold-500 mx-auto mt-2 mb-3"></div>
+            <p class="text-gray-500 text-sm">آخر المنتجات المُضافة لمتجرنا</p>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {% for product in featured_products %}
+                {% include 'store/partials/product_card.html' %}
+            {% endfor %}
+        </div>
+        <div class="text-center mt-8">
+            <a href="{% url 'store:home' %}"
+               class="inline-block bg-primary-700 hover:bg-primary-800 text-white font-bold px-8 py-3 rounded-xl transition">
+                عرض كل المنتجات
             </a>
         </div>
     </div>
-</body>
-</html>
+</div>
+{% endif %}
+
+<!-- Benefits — قيم وصفية عامة، مش أرقام أو إحصائيات. -->
+<div class="py-12">
+    <div class="max-w-7xl mx-auto px-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div>
+                <div class="text-gold-500 text-3xl mb-2">✦</div>
+                <h3 class="font-bold text-sm text-primary-800 mb-1">سهولة الشراء</h3>
+                <p class="text-gray-500 text-xs">تصفح واطلب منتجاتك بسهولة</p>
+            </div>
+            <div>
+                <div class="text-gold-500 text-3xl mb-2">♧</div>
+                <h3 class="font-bold text-sm text-primary-800 mb-1">خدمة عملاء مميزة</h3>
+                <p class="text-gray-500 text-xs">فريق جاهز لمساعدتك</p>
+            </div>
+            <div>
+                <div class="text-gold-500 text-3xl mb-2">♢</div>
+                <h3 class="font-bold text-sm text-primary-800 mb-1">منتجات موثوقة</h3>
+                <p class="text-gray-500 text-xs">نهتم بجودة المنتجات</p>
+            </div>
+            <div>
+                <div class="text-gold-500 text-3xl mb-2">✓</div>
+                <h3 class="font-bold text-sm text-primary-800 mb-1">ضمان رضا العملاء</h3>
+                <p class="text-gray-500 text-xs">نسعى لتجربة شراء أفضل</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Footer مخصص لصفحة الهبوط بس (base.html مفيهوش footer عام حاليًا،
+     فمفيش تأثير على باقي صفحات الموقع). كل الروابط هنا حقيقية وموجودة
+     فعلًا — مفيش رابط "العروض"/"تواصل معنا" وهمي بيودّي لصفحة مش موجودة. -->
+<footer class="bg-primary-800 text-primary-100">
+    <div class="max-w-7xl mx-auto px-4 py-10">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-8">
+            <div>
+                <h3 class="text-white font-bold mb-3">MG Pharmacy</h3>
+                <p class="text-sm leading-loose text-primary-200">
+                    صيدليتك الأقرب إليك. نوفر الأدوية والمستلزمات الطبية
+                    ومنتجات العناية والصحة في تجربة شراء إلكترونية سهلة.
+                </p>
+            </div>
+            <div>
+                <h3 class="text-white font-bold mb-3">روابط سريعة</h3>
+                <div class="flex flex-col gap-2 text-sm">
+                    <a href="{% url 'store:home' %}" class="hover:text-white transition">المتجر</a>
+                    {% if request.user.is_authenticated and request.user.role == 'CLIENT' %}
+                        <a href="{% url 'orders:order_list' %}" class="hover:text-white transition">طلباتي</a>
+                        <a href="{% url 'accounts:dashboard' %}" class="hover:text-white transition">حسابي</a>
+                    {% else %}
+                        <a href="{% url 'accounts:login' %}" class="hover:text-white transition">تسجيل الدخول</a>
+                        <a href="{% url 'accounts:register' %}" class="hover:text-white transition">إنشاء حساب جديد</a>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <h3 class="text-white font-bold mb-3">الأقسام</h3>
+                <div class="flex flex-col gap-2 text-sm">
+                    {% for cat in categories|slice:":4" %}
+                    <a href="{% url 'store:home' %}?category={{ cat.slug }}" class="hover:text-white transition">{{ cat.name }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="border-t border-white/10 pt-4 flex flex-col sm:flex-row justify-between gap-2 text-xs text-primary-300">
+            <span>© MG Pharmacy — جميع الحقوق محفوظة</span>
+            <span>نحن أقرب إليك</span>
+        </div>
+    </div>
+</footer>
+
+{% endblock %}
