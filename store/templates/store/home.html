@@ -23,12 +23,13 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         أكثر من {{ total_products }} منتج متاح للطلب{% if categories %}، موزّعة على {{ categories|length }} قسم{% endif %}
     </p>
 
-    <!-- Search + Category filter: القسم اتنقل هنا بجانب البحث بدل الصندوق
-         الجانبي المنفصل، عشان يبقى الفلترة كلها في مكان واحد واضح، خصوصًا
-         إن أغلب المنتجات حاليًا بلا قسم محدد (uncategorized) فكانت قائمة
-         الأقسام الجانبية بتاخد مساحة كبيرة من غير فايدة حقيقية. -->
-    <div class="max-w-xl mx-auto flex flex-col sm:flex-row gap-2">
-        <div class="relative flex-1">
+    <!-- خانة البحث بس هنا دلوقتي — اختيار القسم بقى جوه مكوّن الفلتر
+         (سايد بار ديسكتوب + درج موبايل) تحت، بنفس تصميم Biozone بالظبط،
+         بدل الدروب داون القديم اللي كان هنا. hx-include بقت
+         "#filter-form" (فورم الفلتر المدمج) بدل "#filter-form,
+         #category-select" لأن الـ select اتشال. -->
+    <div class="max-w-xl mx-auto">
+        <div class="relative">
             <input
                 id="search-q"
                 type="text"
@@ -39,7 +40,7 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
                 hx-get="{% url 'store:home' %}"
                 hx-trigger="keyup changed delay:400ms"
                 hx-target="#product-grid"
-                hx-include="#filter-form, #category-select"
+                hx-include="#filter-form"
                 hx-indicator="#search-spinner"
                 hx-sync="#product-grid:replace"
                 hx-swap="innerHTML"
@@ -50,36 +51,18 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
             </svg>
         </div>
-
-        <label for="category-select" class="sr-only">اختر القسم</label>
-        <select
-            id="category-select"
-            name="category"
-            class="px-4 py-3 rounded-xl text-gray-800 text-base outline-none shadow-sm sm:w-48 shrink-0"
-            hx-get="{% url 'store:home' %}"
-            hx-trigger="change"
-            hx-target="#product-grid"
-            hx-include="#filter-form, #search-q"
-            hx-indicator="#search-spinner"
-            hx-sync="#product-grid:replace"
-            hx-swap="innerHTML">
-            <option value="" {% if not selected_category %}selected{% endif %}>كل الأقسام</option>
-            {% for cat in categories %}
-            <option value="{{ cat.slug }}" {% if selected_category == cat.slug %}selected{% endif %}>{{ cat.name }}</option>
-            {% endfor %}
-        </select>
     </div>
 </div>
 
 
-<!-- تصفح حسب الفئة: كروت بصرية للأقسام (المرحلة 4) — بديل/تكملة لقائمة
-     الفلترة المنسدلة اللي في الـ Hero، عشان يبقى فيه مسار تصفح واضح
-     ومباشر بالعين من أول ما الصفحة تفتح، مش بس بحث/فلتر نصي. كل قسم
-     معروض عليه عدد منتجاته الفعلي (product_count من الفيو)، وبيودّي
-     لنفس شبكة المنتجات تحت مفلترة عليه. بيظهر بس لو فيه أقسام فعلاً.
-     الشريط ده مقصود يبقى صف واحد بس (6 كروت = md:grid-cols-6 بالظبط)،
-     مش عرض لكل الأقسام مهما كان عددها — الأقسام الباقية متاحة من قائمة
-     "اختر القسم" فوق (dropdown) اللي فيها كل الأقسام كاملة. -->
+<!-- تصفح حسب الفئة: كروت بصرية للأقسام (المرحلة 4)، عشان يبقى فيه مسار
+     تصفح واضح ومباشر بالعين من أول ما الصفحة تفتح، مش بس بحث/فلتر نصي.
+     كل قسم معروض عليه عدد منتجاته الفعلي (product_count من الفيو)،
+     وبيودّي لنفس شبكة المنتجات تحت مفلترة عليه. بيظهر بس لو فيه أقسام
+     فعلاً. الشريط ده مقصود يبقى صف واحد بس (6 كروت = md:grid-cols-6
+     بالظبط)، مش عرض لكل الأقسام مهما كان عددها — الأقسام الباقية
+     متاحة من فلتر "الأقسام" تحت (سايد بار/درج، راجع store_filters.html)
+     اللي فيه كل الأقسام كاملة. -->
 {% if categories %}
 <div class="max-w-7xl mx-auto px-4 pt-8">
     <h2 class="text-lg font-bold text-gray-800 mb-4">تصفح حسب الفئة</h2>
@@ -115,83 +98,14 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
     <h2 class="text-lg font-bold text-gray-800">كل المنتجات</h2>
 </div>
 
-<div class="max-w-7xl mx-auto px-4 pb-8 flex flex-col md:flex-row gap-6">
-
-    <!-- Sidebar: بطاقة واحدة واضحة بدل عمود ملزّق جنب الشبكة، ثابتة أثناء
-         التمرير على الشاشات الكبيرة عشان الفلاتر تفضل في متناول اليد.
-         بعد نقل فلتر الأقسام لجانب البحث، السايدبار بقى مخصص للشركة
-         المصنعة بس، فبيظهر بس لو فيه شركات مصنعة فعلًا (بدل صندوق فاضي). -->
-    {% if manufacturers %}
-    <form id="filter-form" class="w-full md:w-64 md:shrink-0">
-      <div class="bg-white rounded-2xl shadow-sm p-5 space-y-6 md:sticky md:top-20">
-
-        <div>
-
-            <h3 class="font-bold text-gray-700 mb-3 text-sm uppercase tracking-wide">
-                الشركة المصنعة
-            </h3>
-
-            <div class="space-y-1">
-
-                <label class="flex items-center gap-2 cursor-pointer rounded-lg px-3 py-2 transition hover:bg-gray-50 has-[:checked]:bg-primary-50">
-                    <input
-                        type="radio"
-                        name="manufacturer"
-                        value=""
-                        {% if not selected_manufacturer %}checked{% endif %}
-                        class="accent-primary-600"
-                        hx-get="{% url 'store:home' %}"
-                        hx-trigger="change"
-                        hx-target="#product-grid"
-                        hx-include="#filter-form, #search-q, #category-select"
-                        hx-indicator="#search-spinner"
-                        hx-sync="#product-grid:replace"
-                        hx-swap="innerHTML">
-
-                    <span class="text-sm text-gray-600 has-[:checked]:text-primary-700 has-[:checked]:font-semibold">
-                        الكل
-                    </span>
-                </label>
-
-                {% for m in manufacturers %}
-
-                <label class="flex items-center gap-2 cursor-pointer rounded-lg px-3 py-2 transition hover:bg-gray-50 has-[:checked]:bg-primary-50">
-                    <input
-                        type="radio"
-                        name="manufacturer"
-                        value="{{ m }}"
-                        {% if selected_manufacturer == m %}checked{% endif %}
-                        class="accent-primary-600"
-                        hx-get="{% url 'store:home' %}"
-                        hx-trigger="change"
-                        hx-target="#product-grid"
-                        hx-include="#filter-form, #search-q, #category-select"
-                        hx-indicator="#search-spinner"
-                        hx-sync="#product-grid:replace"
-                        hx-swap="innerHTML">
-
-                    <span class="text-sm text-gray-600 has-[:checked]:text-primary-700 has-[:checked]:font-semibold">
-                        {{ m }}
-                    </span>
-                </label>
-
-                {% endfor %}
-
-            </div>
-
-        </div>
-
-      </div>
-    </form>
-    {% endif %}
-
-    <!-- Product Grid -->
-    <div class="flex-1">
-        <div id="product-grid">
-            {% include 'store/partials/product_grid.html' %}
-        </div>
-    </div>
-
+<!-- فلترة المتجر (سايد بار ديسكتوب + درج موبايل) وشبكة المنتجات مع
+     بعض: نفس مكوّن Biozone (store_filters.html) بالظبط — سايد بار
+     ثابت جنب الشبكة على الديسكتوب، درج منفصل يتفتح بزرار "فلاتر" على
+     الموبايل (الأقسام والشركات فيه جنب بعض في عمودين، مش تحت بعض)،
+     بحث داخلي جوه كل مجموعة لو الخيارات 8+، شرائح فلاتر نشطة قابلة
+     للإزالة، والنتيجة دايمًا مركّبة (AND) بين القسم والشركة المختارين. -->
+<div class="max-w-7xl mx-auto px-4 pb-8">
+    {% include 'store/partials/store_filters.html' %}
 </div>
 
 {% endblock %}

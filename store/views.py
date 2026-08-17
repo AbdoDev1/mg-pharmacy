@@ -79,15 +79,6 @@ def _apply_filters(products, request):
     return products, selected_category, selected_manufacturer, search_q
 
 
-def _manufacturers_list():
-    return (
-        Product.objects.filter(is_active=True)
-        .exclude(manufacturer='')
-        .values_list('manufacturer', flat=True)
-        .distinct()
-    )
-
-
 def _categories_with_counts():
     """
     الأقسام النشطة فقط، معلَّم عليها عدد المنتجات النشطة الفعلي (product_count)
@@ -104,12 +95,80 @@ def _categories_with_counts():
     )
 
 
+# --- فلتر السايد بار/الدرج (نفس تصميم Biozone بالظبط — راجع
+# store/partials/store_filters.html) — الدوال دي بتجهّز الشكل الموحّد
+# {value, label, count} اللي القالب محتاجه، سواء للأقسام (Category، فيها
+# slug حقيقي) أو للشركة المصنّعة (نص حر (CharField) هنا مش FK زي Biozone،
+# فـ value و label بيبقوا نفس النص بالظبط؛ مفيش slug لأن مفيش موديل
+# Company في المشروع ده أصلًا).
+
+def _category_options():
+    """
+    الأقسام النشطة اللي عندها منتج نشط واحد على الأقل بس (بعكس
+    _categories_with_counts() اللي بترجع كل الأقسام النشطة حتى الفاضية —
+    مستخدمة لسه في كروت "تصفح حسب الفئة"). مرتبة تنازليًا بعدد المنتجات
+    (الأكثر بضاعة فوق)، زي فلتر Biozone بالظبط.
+    """
+    categories = (
+        Category.objects.filter(is_active=True, products__is_active=True)
+        .annotate(active_product_count=Count(
+            'products', filter=Q(products__is_active=True), distinct=True
+        ))
+        .distinct()
+        .order_by('-active_product_count', 'name')
+    )
+    return [
+        {'value': c.slug, 'label': c.name, 'count': c.active_product_count}
+        for c in categories
+    ]
+
+
+def _manufacturer_options():
+    """
+    نفس فكرة _category_options() بس للشركة المصنّعة — هنا manufacturer نص
+    حر على Product (مش FK)، فبنجمّعها بـ values().annotate() بدل استعلام
+    على موديل منفصل. value = label = نفس النص بالظبط (مفيش slug).
+    """
+    rows = (
+        Product.objects.filter(is_active=True)
+        .exclude(manufacturer='')
+        .values('manufacturer')
+        .annotate(count=Count('id'))
+        .order_by('-count', 'manufacturer')
+    )
+    return [
+        {'value': r['manufacturer'], 'label': r['manufacturer'], 'count': r['count']}
+        for r in rows
+    ]
+
+
+def _selected_label(options, selected_value):
+    """
+    بيدوّر على label الخيار المختار (قسم أو شركة مصنّعة) عشان الفلتر
+    المدمج (store_filters.html) يعرضه كـ "chip" من غير ما يحتاج يلف على
+    القايمة تاني جوه التمبليت. options هنا لسه list من dicts
+    {value, label, count} — نفس شكل _category_options()/_manufacturer_options().
+    """
+    if not selected_value:
+        return ''
+    for opt in options:
+        if opt['value'] == selected_value:
+            return opt['label']
+    return ''
+
+
+FILTER_GROUP_SEARCH_MIN_OPTIONS = 8
+# خانة البحث الداخلي جوه مجموعة الفلتر (بحث في الأقسام/الشركات) زودة لو
+# عدد الخيارات قليل — بتتخفي تلقائيًا لو العدد أقل من العتبة دي.
+
+
 def store_home(request):
     categories = _categories_with_counts()
     products, selected_category, selected_manufacturer, search_q = _apply_filters(
         _base_products_queryset(), request
     )
-    manufacturers = _manufacturers_list()
+    category_options = _category_options()
+    manufacturer_options = _manufacturer_options()
 
     paginator = Paginator(products, PRODUCTS_PER_PAGE)
     # لو فلتر (فئة/بحث) اتغيّر ورجع صفحة مش موجودة (مثلاً كنت في صفحة 5
@@ -121,9 +180,14 @@ def store_home(request):
         'page_obj': page_obj,
         'total_products': paginator.count,
         'categories': categories,
-        'manufacturers': manufacturers,
+        'category_options': category_options,
+        'manufacturer_options': manufacturer_options,
+        'category_search_enabled': len(category_options) >= FILTER_GROUP_SEARCH_MIN_OPTIONS,
+        'manufacturer_search_enabled': len(manufacturer_options) >= FILTER_GROUP_SEARCH_MIN_OPTIONS,
         'selected_category': selected_category,
         'selected_manufacturer': selected_manufacturer,
+        'selected_category_label': _selected_label(category_options, selected_category),
+        'selected_manufacturer_label': _selected_label(manufacturer_options, selected_manufacturer),
         'search_q': search_q,
         'grid_url': 'store:home',
         'cart_quantities': _cart_quantities(request),
@@ -184,7 +248,8 @@ def new_arrivals(request):
     categories = Category.objects.filter(is_active=True)
     base_qs = _base_products_queryset().filter(new_arrival_filter())
     products, selected_category, selected_manufacturer, search_q = _apply_filters(base_qs, request)
-    manufacturers = _manufacturers_list()
+    category_options = _category_options()
+    manufacturer_options = _manufacturer_options()
 
     paginator = Paginator(products.order_by('-new_arrival_at'), PRODUCTS_PER_PAGE)
     page_obj = paginator.get_page(request.GET.get('page'))
@@ -194,9 +259,14 @@ def new_arrivals(request):
         'page_obj': page_obj,
         'total_products': paginator.count,
         'categories': categories,
-        'manufacturers': manufacturers,
+        'category_options': category_options,
+        'manufacturer_options': manufacturer_options,
+        'category_search_enabled': len(category_options) >= FILTER_GROUP_SEARCH_MIN_OPTIONS,
+        'manufacturer_search_enabled': len(manufacturer_options) >= FILTER_GROUP_SEARCH_MIN_OPTIONS,
         'selected_category': selected_category,
         'selected_manufacturer': selected_manufacturer,
+        'selected_category_label': _selected_label(category_options, selected_category),
+        'selected_manufacturer_label': _selected_label(manufacturer_options, selected_manufacturer),
         'search_q': search_q,
         'window_days': NEW_ARRIVALS_WINDOW_DAYS,
         'grid_url': 'store:new_arrivals',
