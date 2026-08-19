@@ -1,0 +1,58 @@
+{% extends 'staff/base.html' %}
+{% block title %}جاري تجهيز ملف التصدير — MG Pharmacy{% endblock %}
+{% block breadcrumbs %}
+{% load staff_ui %}
+<nav class="flex items-center text-sm text-gray-500 mb-4">
+    {% crumb "الرئيسية" "staff:dashboard" %}
+    {% crumb "المنتجات" "staff:product_list" %}
+    {% crumb "تصدير" %}
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<!-- شاشة انتظار بينما build_products_export شغالة في celery-worker (راجع
+     products/tasks.py وexport_products_processing في import_export.py).
+     نفس فكرة import_processing.html بالظبط (WebSocket + poll احتياطي)،
+     بس هنا لما الحالة تبقى done، السيرفر بيوجّه مباشرة لرابط التحميل
+     بدل شاشة مراجعة. -->
+<div class="bg-white rounded-2xl shadow-sm p-10 flex flex-col items-center text-center gap-4"
+     x-data="exportProcessingView()">
+    <div class="w-12 h-12 rounded-full border-4 border-primary-100 border-t-primary-600 animate-spin"></div>
+    <div>
+        <p class="font-semibold text-gray-800">جاري تجهيز ملف التصدير…</p>
+        <p class="text-sm text-gray-500 mt-1">هيبدأ التحميل تلقائيًا لما الملف يخلص.</p>
+    </div>
+</div>
+
+<script>
+function exportProcessingView() {
+    return {
+        pollTimer: null,
+        wsUnsubscribe: null,
+        recheck() {
+            window.location.href = "{% url 'staff:export_products_processing' %}";
+        },
+        init() {
+            // شبكة أمان: لو الـ WebSocket اتقطع أو الرسالة اتفوتت، بنعيد
+            // التحقق من السيرفر كل 4 ثواني على أي حال.
+            this.pollTimer = setInterval(() => this.recheck(), 4000);
+
+            const handler = (e) => {
+                if (e.detail.event !== 'export_status') return;
+                if (e.detail.status === 'done' || e.detail.status === 'error') {
+                    this.recheck();
+                }
+            };
+            window.addEventListener('biozone:ws-message', handler);
+            this.wsUnsubscribe = () => window.removeEventListener('biozone:ws-message', handler);
+        },
+        destroy() {
+            clearInterval(this.pollTimer);
+            if (this.wsUnsubscribe) this.wsUnsubscribe();
+        },
+    };
+}
+</script>
+
+{% endblock %}

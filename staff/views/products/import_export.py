@@ -7,8 +7,12 @@
 لـ products.services.import_export عشان يبقى قابل للاختبار من غير ما نمر
 بـ request/session — هنا بس تنسيق الـ HTTP request/response وrenders.
 """
+import uuid
+from pathlib import Path
+
+from django.conf import settings
 from django.core.paginator import Paginator
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.db import transaction
@@ -23,6 +27,15 @@ from staff.excel_utils import workbook_response
 
 IMPORT_SESSION_KEY = 'product_import_batch'
 IMPORT_ERRORS_SESSION_KEY = 'product_import_last_errors'
+# حالة معالجة الاستيراد بالخلفية (Celery) — {'state': 'processing'|'done'|'error',
+# 'message': '...' (لو error بس)}. راجع products/tasks.py (parse_import_file)
+# وimport_products_processing تحت لتفاصيل الاستخدام الكامل (البند 2.5 من
+# خطة biozone: نقل القراءة/التصنيف من جوه طلب HTTP لـ worker منفصل).
+IMPORT_STATUS_SESSION_KEY = 'product_import_status'
+# مسار مؤقت مشترك بين web-store/web-staff/celery-worker (bind mount واحد،
+# راجع docker-compose.yml) — هنا بس بيتخزن الملف المرفوع لحد ما الـ task
+# تقراه وتمسحه؛ مش media حقيقي ومش متاح عبر nginx.
+IMPORT_TMP_DIR = Path(settings.BASE_DIR) / 'tmp' / 'imports'
 # حماية من ملف إكسل ضخم بالغلط (أو مقصود): الدفعة بالكامل بتتخزن مؤقتًا في
 # الـ session (قاعدة البيانات) بين شاشة المراجعة وشاشة التأكيد، فملف بعشرات
 # الآلاف من الصفوف كان بيعمل صف session ضخم ويشغل الـ worker وقت طويل في
@@ -30,6 +43,17 @@ IMPORT_ERRORS_SESSION_KEY = 'product_import_last_errors'
 # أكبر فعلاً، يقسّم الملف على أكتر من دفعة).
 IMPORT_MAX_FILE_SIZE_MB = 5
 IMPORT_MAX_ROWS = 3000
+
+# نفس فكرة IMPORT_TMP_DIR بالظبط بس للاتجاه المعاكس (بناء ملف تصدير في
+# الخلفية عبر Celery — راجع products/tasks.py build_products_export
+# ومقدمة import_export.py، البند 2 من تقرير الديون التقنية). مسار مؤقت
+# مشترك بين web-staff/celery-worker (نفس ./tmp bind mount في
+# docker-compose.yml)، مش media حقيقي ومش متاح عبر nginx.
+EXPORT_TMP_DIR = Path(settings.BASE_DIR) / 'tmp' / 'exports'
+# حالة بناء ملف التصدير في الخلفية — {'state': 'processing'|'done'|'error',
+# 'token': '...' (لو done — اسم الملف العشوائي في EXPORT_TMP_DIR)،
+# 'filename': '...' (لو done — اسم التحميل الأصلي)، 'message': '...' (لو error)}.
+EXPORT_STATUS_SESSION_KEY = 'product_export_status'
 
 # قبل كده كانت شاشة المراجعة بترندر كل صفوف "هيتحدّث"/"هيتضاف" (لحد آلاف
 # السطور مع ملف كبير) في قائمة واحدة من غير أي تقسيم — الحل: نفس Paginator
@@ -59,10 +83,14 @@ DISCOUNT_COL_PREFIX = import_export_service.DISCOUNT_COL_PREFIX
 @perm_required('products.add_product')
 def import_products(request):
     """
-    المرحلة الأولى: قراءة الملف وتصنيف كل صف (تحديث أكيد / إضافة جديدة
-    أكيدة / يحتاج مراجعة) من غير أي حفظ فعلي، ثم عرض شاشة مراجعة. الحفظ
-    الفعلي بيحصل بس في import_products_confirm بعد موافقة الموظف على أي
-    صف يحتاج قرار بشري (اسم قريب من صنف موجود).
+    المرحلة الأولى: حفظ الملف المرفوع وتشغيل قراءته وتصنيفه (تحديث أكيد /
+    إضافة جديدة أكيدة / يحتاج مراجعة) في الخلفية عبر Celery — مش جوه طلب
+    HTTP نفسه (راجع products/tasks.py — parse_import_file لسبب النقل).
+    الفحوصات هنا (الامتداد، حجم الملف) لسه متزامنة لأنها سريعة (بايتات
+    قليلة، مفيش قراءة فعلية للملف)؛ القراءة والتصنيف الفعليين (اللي كانا
+    بياخدوا وقت مع ملف كبير) بس اللي اتنقلوا. الحفظ الفعلي في قاعدة
+    البيانات لسه بيحصل في import_products_confirm بعد موافقة الموظف على
+    أي صف يحتاج قرار بشري (اسم قريب من صنف موجود) — ده لم يتغيّر.
     """
     if request.method == 'POST':
         excel_file = request.FILES.get('excel_file')
@@ -80,22 +108,47 @@ def import_products(request):
             )
             return redirect('staff:import_products')
 
-        rows, errors, error_message = import_export_service.read_import_workbook(
-            excel_file, max_rows=IMPORT_MAX_ROWS,
+        # لازم session_key موجود فعليًا قبل ما نمرره للـ task (الـ task
+        # بتشتغل في process تاني تمامًا، مقدرش تعتمد على request.session
+        # لسه معملهاش save() لو كانت الجلسة لسه فاضية/جديدة).
+        if not request.session.session_key:
+            request.session.save()
+
+        IMPORT_TMP_DIR.mkdir(parents=True, exist_ok=True)
+        tmp_path = IMPORT_TMP_DIR / f'{uuid.uuid4().hex}.xlsx'
+        with open(tmp_path, 'wb') as f:
+            for chunk in excel_file.chunks():
+                f.write(chunk)
+
+        request.session[IMPORT_STATUS_SESSION_KEY] = {'state': 'processing'}
+        from products.tasks import parse_import_file
+        parse_import_file.delay(
+            request.session.session_key, str(tmp_path), IMPORT_MAX_ROWS, request.user.pk,
         )
-        if error_message:
-            messages.error(request, error_message)
-            return redirect('staff:import_products')
-
-        if not rows:
-            messages.error(request, 'مفيش أي صف صالح في الملف.')
-            for err in errors:
-                messages.warning(request, err)
-            return redirect('staff:import_products')
-
-        request.session[IMPORT_SESSION_KEY] = {'rows': rows, 'errors': errors}
-        return redirect('staff:import_products_review')
+        return redirect('staff:import_products_processing')
     return render(request, 'staff/products/import.html')
+
+
+@perm_required('products.add_product')
+def import_products_processing(request):
+    """
+    شاشة انتظار بينما الـ task شغالة في celery-worker — بتتحقق من حالة
+    الاستيراد المخزّنة في الجلسة (راجع import_products أعلاه وproducts/tasks.py)
+    وتحوّل تلقائيًا لشاشة المراجعة (done) أو ترجع لصفحة الرفع مع رسالة
+    الخطأ (error) أول ما تلاقيهم. القالب نفسه بيسمع بث WebSocket شخصي
+    (import_status) عشان يعيد التحقق فورًا من غير ما يستنى الـ poll
+    الدوري (شبكة أمان لو الـ WebSocket اتقطع — نفس أسلوب جرس الإشعارات).
+    """
+    status = request.session.get(IMPORT_STATUS_SESSION_KEY)
+    if not status:
+        return redirect('staff:import_products')
+    if status.get('state') == 'done':
+        return redirect('staff:import_products_review')
+    if status.get('state') == 'error':
+        del request.session[IMPORT_STATUS_SESSION_KEY]
+        messages.error(request, status.get('message', 'حصل خطأ أثناء معالجة الملف.'))
+        return redirect('staff:import_products')
+    return render(request, 'staff/products/import_processing.html')
 
 
 @perm_required('products.add_product')
@@ -107,9 +160,16 @@ def import_products_review(request):
     """
     batch = request.session.get(IMPORT_SESSION_KEY)
     if not batch:
+        # لسه معلّقة في الـ celery-worker (مثلاً الموظف فتح لينك الصفحة
+        # مباشرة أو عمل refresh قبل ما الـ task تخلص) — نرجّعه لشاشة
+        # الانتظار بدل رسالة خطأ مضلّلة.
+        status = request.session.get(IMPORT_STATUS_SESSION_KEY)
+        if status and status.get('state') == 'processing':
+            return redirect('staff:import_products_processing')
         messages.error(request, 'مفيش عملية استيراد جارية. من فضلك ارفع الملف تاني.')
         return redirect('staff:import_products')
 
+    request.session.pop(IMPORT_STATUS_SESSION_KEY, None)
     rows = batch['rows']
     all_update_rows = [r for r in rows if r['action'] == 'update']
     all_create_rows = [r for r in rows if r['action'] == 'create']
@@ -229,12 +289,71 @@ def download_template(request):
 
 @perm_required('products.view_product')
 def export_products(request):
-    """تصدير كل الأصناف الحالية دفعة واحدة (بدون اختيار)."""
-    products = Product.objects.select_related('category').prefetch_related(
-        'units__discounts__account_type',
-    ).all()
-    wb = import_export_service.build_products_export_workbook(products)
-    return workbook_response(wb, 'biozone_products_export.xlsx')
+    """
+    تصدير كل الأصناف الحالية دفعة واحدة (بدون اختيار). زي الاستيراد
+    بالظبط: بناء الملف نفسه (سحب كل الأصناف + كتابة الإكسل) بيتنفذ في
+    الخلفية عبر Celery (products/tasks.py — build_products_export) مش
+    جوه طلب HTTP، عشان مع نمو الكتالوج ميبقاش نفس عنق الزجاجة اللي كان
+    في الاستيراد قبل النقل (راجع تقرير الديون التقنية، البند 2).
+    """
+    if not request.session.session_key:
+        request.session.save()
+
+    request.session[EXPORT_STATUS_SESSION_KEY] = {'state': 'processing'}
+    from products.tasks import build_products_export
+    build_products_export.delay(
+        request.session.session_key, None, 'mgpharmacy_products_export.xlsx', request.user.pk,
+    )
+    return redirect('staff:export_products_processing')
+
+
+@perm_required('products.view_product')
+def export_products_processing(request):
+    """
+    شاشة انتظار بينما build_products_export شغالة في celery-worker — نفس
+    فكرة import_products_processing بالظبط (راجعها للتفاصيل الكاملة عن
+    آلية الـ poll + WebSocket)، بس بتحوّل لتحميل الملف الجاهز بدل شاشة مراجعة.
+    """
+    status = request.session.get(EXPORT_STATUS_SESSION_KEY)
+    if not status:
+        return redirect('staff:product_list')
+    if status.get('state') == 'done':
+        return redirect('staff:export_products_download', token=status['token'])
+    if status.get('state') == 'error':
+        del request.session[EXPORT_STATUS_SESSION_KEY]
+        messages.error(request, status.get('message', 'حصل خطأ أثناء بناء ملف التصدير.'))
+        return redirect('staff:product_list')
+    return render(request, 'staff/products/export_processing.html')
+
+
+@perm_required('products.view_product')
+def export_products_download(request, token):
+    """
+    بتقدّم ملف التصدير الجاهز للتحميل. التوكن في الرابط لازم يطابق التوكن
+    المخزّن في جلسة الموظف نفسه (EXPORT_STATUS_SESSION_KEY) — حماية من
+    تخمين مسار ملف موظف تاني، حتى لو EXPORT_TMP_DIR أصلًا مش متاح عبر
+    nginx. بعد التقديم، بنمسح الملف من القرص ونشيل الحالة من الجلسة —
+    مفيش داعي يفضل محتفظ بيه بعد أول تحميل.
+    """
+    status = request.session.get(EXPORT_STATUS_SESSION_KEY)
+    if not status or status.get('state') != 'done' or status.get('token') != token:
+        raise Http404
+
+    path = EXPORT_TMP_DIR / f'{token}.xlsx'
+    if not path.exists():
+        del request.session[EXPORT_STATUS_SESSION_KEY]
+        raise Http404
+
+    del request.session[EXPORT_STATUS_SESSION_KEY]
+    response = FileResponse(
+        open(path, 'rb'), as_attachment=True, filename=status['filename'],
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return response
 
 
 def _export_picker_queryset(request):
@@ -321,7 +440,12 @@ def export_products_category_ids(request):
 
 @perm_required('products.view_product')
 def export_products_selected(request):
-    """يستقبل قائمة IDs من صفحة الاختيار ويصدّرها كملف إكسل واحد."""
+    """
+    يستقبل قائمة IDs من صفحة الاختيار ويصدّرها كملف إكسل واحد. نفس نقل
+    export_products للخلفية عبر Celery (راجع تعليقها فوق) — هنا كمان
+    مهم حتى لو العدد المحدد صغير عادةً، لأن نفس الـ task قابلة لإعادة
+    الاستخدام (product_ids بدل None) بغض النظر عن حجم التحديد.
+    """
     if request.method != 'POST':
         return redirect('staff:export_products_select')
 
@@ -330,8 +454,12 @@ def export_products_selected(request):
         messages.warning(request, 'لازم تحدد صنف واحد على الأقل قبل التصدير.')
         return redirect('staff:export_products_select')
 
-    products = Product.objects.select_related('category').prefetch_related(
-        'units__discounts__account_type',
-    ).filter(pk__in=ids)
-    wb = import_export_service.build_products_export_workbook(products)
-    return workbook_response(wb, 'biozone_products_export_selected.xlsx')
+    if not request.session.session_key:
+        request.session.save()
+
+    request.session[EXPORT_STATUS_SESSION_KEY] = {'state': 'processing'}
+    from products.tasks import build_products_export
+    build_products_export.delay(
+        request.session.session_key, ids, 'mgpharmacy_products_export_selected.xlsx', request.user.pk,
+    )
+    return redirect('staff:export_products_processing')

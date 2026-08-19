@@ -53,6 +53,33 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         (شوف notifications/services.py — _push_realtime)."""
         await self.send(text_data=json.dumps({'event': 'new_notification'}))
 
+    async def import_status(self, event):
+        """
+        Handler لحالة استيراد ملف إكسل (Celery، راجع products/tasks.py —
+        parse_import_file) — بعكس backup_status تحت، دي بتوصل لمجموعة
+        المستخدم الشخصية (self.group_name) بس، مش STAFF_BROADCAST_GROUP،
+        لأن حالة استيراد ملف واحد تخص اللي رفعه بس. البيانات المفصّلة
+        (rows/errors) نفسها مش هنا — متخزّنة في الجلسة، وشاشة المعالجة
+        بترجع تطلبها من صفحة المراجعة العادية بعد ما توصلها الإشارة دي.
+        """
+        await self.send(text_data=json.dumps({
+            'event': 'import_status',
+            'status': event['status'],
+        }))
+
+    async def export_status(self, event):
+        """
+        نظير import_status بس لبناء ملف تصدير المنتجات في الخلفية (راجع
+        products/tasks.py — build_products_export). زي import_status
+        بالظبط، بتوصل لمجموعة المستخدم الشخصية بس (مش كل الموظفين) —
+        اسم/توكن الملف الجاهز نفسه مش هنا، متخزّن في الجلسة، وشاشة
+        export_products_processing هي اللي بتقرر التوجيه بناءً عليه.
+        """
+        await self.send(text_data=json.dumps({
+            'event': 'export_status',
+            'status': event['status'],
+        }))
+
     async def backup_status(self, event):
         """
         Handler لحالة النسخ الاحتياطي اللحظية (running/success/error)

@@ -17,7 +17,7 @@ class Command(BaseCommand):
         'حالة الفلاشة الحقيقية على الـ host) — لذلك backup_db.sh على الـ '
         'host + الأمر ده أدق حل لسيناريو REQUIRE_MOUNTPOINT.\n\n'
         'أمثلة:\n'
-        '  python manage.py report_backup_result --success --file biozone_2026-08-07_10h.sql.gz\n'
+        '  python manage.py report_backup_result --success --file mgpharmacy_2026-08-07_10h.sql.gz\n'
         '  python manage.py report_backup_result --error "نص رسالة الخطأ هنا"'
     )
 

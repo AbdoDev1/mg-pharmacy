@@ -9,6 +9,8 @@
 {% endblock %}
 {% block content %}
 
+<div x-data="backupStatusListener()">
+
 <h1 class="text-2xl font-bold text-gray-800 mb-6">النسخ الاحتياطي لقاعدة البيانات</h1>
 
 <!-- لوحة حالة مكان الحفظ (الفلاشة أو أي مسار متركّب مكان backups/) —
@@ -83,7 +85,7 @@
 
     <div class="flex flex-wrap items-center gap-3">
         <form method="post" action="{% url 'staff:backup_run_now' %}"
-              data-confirm="تشغيل نسخة احتياطية الآن؟ العملية بتاخد ثواني معدودة وممكن تستنى النتيجة في نفس الصفحة."
+              data-confirm="تشغيل نسخة احتياطية الآن؟ هتبدأ في الخلفية والصفحة هتتحدّث تلقائيًا لما تخلص."
               data-confirm-type="warning">
             {% csrf_token %}
             <button type="submit"
@@ -119,5 +121,33 @@
     <p class="text-sm text-gray-400">لا توجد نسخ احتياطية بعد.</p>
     {% endif %}
 </div>
+
+</div>
+
+<script>
+function backupStatusListener() {
+    return {
+        // بعد ما backup_run_now بقت بتشغّل perform_backup() في الخلفية عبر
+        // Celery (راجع staff/tasks.py وstaff/views/backup.py)، الصفحة دي
+        // بتستنى حالة running/success/error عن طريق WebSocket (نفس البث
+        // اللي staff/services/backup.py بيبعته لكل الموظفين المتصلين،
+        // STAFF_BROADCAST_GROUP) وتعمل refresh لنفسها لما النتيجة النهائية
+        // توصل — بدل ما تستنى response الطلب نفسه زي قبل كده.
+        handler: null,
+        init() {
+            this.handler = (e) => {
+                if (e.detail.event !== 'backup_status') return;
+                if (e.detail.status === 'success' || e.detail.status === 'error') {
+                    window.location.reload();
+                }
+            };
+            window.addEventListener('biozone:ws-message', this.handler);
+        },
+        destroy() {
+            window.removeEventListener('biozone:ws-message', this.handler);
+        },
+    };
+}
+</script>
 
 {% endblock %}

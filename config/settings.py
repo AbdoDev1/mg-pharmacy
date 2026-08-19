@@ -27,7 +27,8 @@ DEBUG = config('DEBUG', cast=bool)
 # الدومين/الدومينات الحقيقية بتتحدد وقت التشغيل من .env، مش هنا في الكود.
 # ده معناه إنك تقدر تغيّر الدومين أو تضيف واحد جديد (أو تشغّل على IP مباشرة)
 # من غير ما تلمس settings.py خالص ولا تعمل --build تاني — بس تعدّل .env.production
-# وتعمل `docker compose restart web`.
+# وتعمل `docker compose -p mgpharmacy restart web-store web-staff` (وceleryworker
+# لو حبيت، بس مش لازم تقنيًا — الإعداد ده مش بيتقرا غير وقت تعامل مع طلبات HTTP).
 #
 # القيمة في .env بتبقى قائمة مفصولة بفواصل، مثلاً:
 #   EXTRA_ALLOWED_HOSTS=biozone.example.com,www.biozone.example.com
@@ -151,6 +152,17 @@ DATABASES = {
         'HOST': config('DB_HOST', default='db'),
         'PORT': config('DB_PORT', default='5432'),
         'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=60, cast=int),
+        # Required whenever Django sits behind PgBouncer in
+        # pool_mode=transaction (our default in production — see
+        # pgbouncer/pgbouncer.ini): a server-side cursor opened by one
+        # query can end up read on a different pooled connection than the
+        # one it was opened on, since PgBouncer is free to hand the
+        # underlying Postgres connection to a different client between
+        # transactions. Nothing in this codebase uses .iterator() today,
+        # but this stays on as a safety net for whoever adds it later —
+        # without it, that would fail silently/intermittently rather than
+        # with a clear error.
+        'DISABLE_SERVER_SIDE_CURSORS': True,
     }
 }
 
@@ -191,8 +203,22 @@ CHANNEL_LAYERS = {
     },
 }
 
+# Celery — بينفّذ العمليات الطويلة في worker منفصل تمامًا عن Gunicorn، عشان
+# طلب HTTP يرجع فورًا بدل ما ياخد worker كامل لمدة طويلة. نفس Redis
+# المستخدم أصلاً، بس قاعدة بيانات رقم 3 منفصلة عن الكاش/السيشن (1) وقناة
+# الإشعارات (2). منقول من Biozone — راجع config/celery.py لملحوظة إن مفيش
+# tasks فعلية مسجّلة لسه في MG Pharmacy.
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://redis:6379/3')
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://redis:6379/3')
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+# حد أقصى مطلق لأي مهمة — حماية من مهمة عالقة تشغل الـ worker للأبد.
+CELERY_TASK_TIME_LIMIT = 15 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 10 * 60
+
  #----- الإيميل (لازم لإرسال روابط إعادة تعيين كلمة السر) -----
-# EMAIL_BACKEND الافتراضي بيطبع الإيميل في الـ console (docker compose logs -f web)
+# EMAIL_BACKEND الافتراضي بيطبع الإيميل في الـ console (docker compose logs -f web-store)
 # ده مفيد جدًا للتجربة المحلية من غير ما تحتاج SMTP حقيقي.
 EMAIL_BACKEND = config(
     'EMAIL_BACKEND',
@@ -211,6 +237,18 @@ PASSWORD_RESET_TIMEOUT = 60 * 60
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
+
+# Hasher أخف من الـ default (1.2M iteration في Django 6.0) — منقول من
+# Biozone. راجع accounts/hashers.py لملحوظة إن الرقم متقاس على هاردوير
+# Biozone مش هاردوير MG Pharmacy، ولازم يتراجع بعد النشر الفعلي.
+PASSWORD_HASHERS = [
+    'accounts.hashers.FastPBKDF2Hasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+    'django.contrib.auth.hashers.ScryptPasswordHasher',
+]
 
 AUTH_PASSWORD_VALIDATORS = [
     {

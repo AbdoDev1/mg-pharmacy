@@ -27,25 +27,23 @@ def backup_manual(request):
 
 @perm_required('staff.manage_backup')
 def backup_run_now(request):
+    """
+    زرار التشغيل اليدوي: بيبدأ perform_backup() في الخلفية عبر Celery
+    (staff/tasks.py — run_backup_task) بدل ما ينتظرها جوه نفس طلب HTTP
+    (راجع تقرير الديون التقنية، البند 6). النتيجة الفعلية (نجاح/فشل)
+    بتوصل بعد كده عن طريق البث اللحظي (WebSocket، staff/services/backup.py
+    — _broadcast) اللي صفحة backup.html بتسمعه وتعمل refresh لنفسها
+    لما يوصلها، بدل ما نستنى النتيجة هنا ونعرضها فورًا.
+    """
     if request.method != 'POST':
         return redirect('staff:backup_manual')
 
-    from staff.services.backup import perform_backup
-
-    success, error_detail = perform_backup()
-    if success:
-        messages.success(request, 'تم عمل النسخة الاحتياطية بنجاح.')
-    elif isinstance(error_detail, str) and 'شغالة بالفعل دلوقتي' in error_detail:
-        # مش خطأ فني — مجرد تعارض توقيت (مثلاً الكرون شغال دلوقتي بالظبط).
-        messages.warning(request, error_detail)
-    else:
-        # نفس الرسالة العامة اللي بتوصل لكل الموظفين — التفاصيل التقنية
-        # (error_detail) متاحة بس عن طريق زرار "تحميل تفاصيل المشكلة" في
-        # نفس الصفحة، مش هنا في رسالة الموقع نفسها.
-        messages.error(
-            request,
-            'حصلت مشكلة في النسخ الاحتياطي. لو اتكررت، المشكلة محتاجة تدخل المبرمج مباشرة.'
-        )
+    from staff.tasks import run_backup_task
+    run_backup_task.delay()
+    messages.info(
+        request,
+        'بدأت النسخة الاحتياطية في الخلفية — هتلاقي النتيجة في نفس الصفحة (تحديث تلقائي) أو في الجرس.'
+    )
     return redirect('staff:backup_manual')
 
 

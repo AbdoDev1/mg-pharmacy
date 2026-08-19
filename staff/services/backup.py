@@ -3,7 +3,9 @@
 عادي بـ DB_HOST:DB_PORT، بالظبط زي ما Django نفسه بيتصل بقاعدة البيانات)
 من غير ما يحتاج docker CLI ولا وصول لـ docker socket. ده بيخليه يشتغل
 بنفس الطريقة بالظبط سواء:
-  - جوه حاوية web (زرار "تشغيل نسخة احتياطية الآن" في staff/views/backup.py)
+  - جوه celery-worker (زرار "تشغيل نسخة احتياطية الآن" في
+    staff/views/backup.py — بيتنفذ عبر staff/tasks.py — run_backup_task
+    دلوقتي، مش جوه طلب HTTP مباشرة، راجع تعليقهم للتفاصيل)
   - أو عن طريق الكرون (staff/management/commands/run_backup.py)
   - محليًا (docker-compose.yml العادي) أو على الـ VPS في الإنتاج
 
@@ -13,8 +15,15 @@
 ملحوظة: scripts/backup_db.sh القديم لسه موجود ومنفصل — بديل لمن يفضّل
 يشغّل النسخ من على الـ host مباشرة (برّه Django) عن طريق
 `docker compose exec ... db pg_dump`. الاتنين بيكتبوا في نفس backups/
-بنفس صيغة الاسم، فمتوافقين مع بعض (retention وعرض الحالة شغالين على
-نواتج أي منهم).
+بنفس صيغة الاسم (mgpharmacy_*.sql.gz)، فمتوافقين مع بعض (retention
+وعرض الحالة شغالين على نواتج أي منهم).
+
+⚠️ ملحوظة ترقية: قبل التعديل ده كان الكود هنا بيستخدم بادئة "biozone_"
+(بقية من قبل الـ fork عن Biozone) بينما backup_db.sh دايمًا كان بيكتب
+"mgpharmacy_" — يعني أي نسخة اتعملت عن طريق السكريبت القديم كانت
+بتتجاهل تمامًا من retention وعرض الحالة هنا. لو فيه نسخ قديمة فعلية على
+السيرفر بصيغة biozone_*.sql.gz (من قبل التوحيد ده)، إعادة تسميتها يدويًا
+لـ mgpharmacy_* هتخليها تظهر/تتحسب صح من جديد.
 """
 import errno
 import fcntl
@@ -162,7 +171,7 @@ def backup_status():
     except OSError:
         pass
 
-    files = sorted(BACKUP_DIR.glob('biozone_*.sql.gz'), key=lambda p: p.stat().st_mtime)
+    files = sorted(BACKUP_DIR.glob('mgpharmacy_*.sql.gz'), key=lambda p: p.stat().st_mtime)
     status['backup_count'] = len(files)
     if files:
         latest = files[-1]
@@ -184,7 +193,7 @@ def recent_backups(limit=5):
         return []
 
     files = sorted(
-        BACKUP_DIR.glob('biozone_*.sql.gz'),
+        BACKUP_DIR.glob('mgpharmacy_*.sql.gz'),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )[:limit]
@@ -221,16 +230,16 @@ def _preflight_checks():
 def _run_pg_dump():
     """بتشغّل pg_dump فعليًا وتضغط الناتج. بترجع (success: bool, error_text: str)."""
     db = settings.DATABASES['default']
-    # اسم الملف: تاريخ + ساعة بس (زي biozone_2026-08-06_22h.sql.gz)، نفس
+    # اسم الملف: تاريخ + ساعة بس (زي mgpharmacy_2026-08-06_22h.sql.gz)، نفس
     # صيغة scripts/backup_db.sh بالظبط عشان الاتنين يفضلوا متوافقين. لو
     # حصل نادرًا نسختين في نفس الساعة (تشغيل يدوي من الداشبورد جنب
     # تشغيلة الكرون مثلاً)، بنضيف رقم تسلسلي (_2، _3، ...) بدل ما نكتب
     # فوق النسخة الأولى.
     hour_stamp = datetime.now().strftime('%Y-%m-%d_%Hh')
-    backup_file = BACKUP_DIR / f'biozone_{hour_stamp}.sql.gz'
+    backup_file = BACKUP_DIR / f'mgpharmacy_{hour_stamp}.sql.gz'
     seq = 2
     while backup_file.exists():
-        backup_file = BACKUP_DIR / f'biozone_{hour_stamp}_{seq}.sql.gz'
+        backup_file = BACKUP_DIR / f'mgpharmacy_{hour_stamp}_{seq}.sql.gz'
         seq += 1
 
     env = os.environ.copy()
@@ -281,7 +290,7 @@ def _cleanup_old_backups():
     """بتمسح النسخ الأقدم من RETENTION_DAYS يوم — نفس منطق backup_db.sh."""
     cutoff = datetime.now().timestamp() - (RETENTION_DAYS * 86400)
     deleted = 0
-    for f in BACKUP_DIR.glob('biozone_*.sql.gz'):
+    for f in BACKUP_DIR.glob('mgpharmacy_*.sql.gz'):
         if f.stat().st_mtime < cutoff:
             f.unlink(missing_ok=True)
             deleted += 1

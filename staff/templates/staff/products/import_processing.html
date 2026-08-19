@@ -1,0 +1,61 @@
+{% extends 'staff/base.html' %}
+{% block title %}جاري معالجة الملف — MG Pharmacy{% endblock %}
+{% block breadcrumbs %}
+{% load staff_ui %}
+<nav class="flex items-center text-sm text-gray-500 mb-4">
+    {% crumb "الرئيسية" "staff:dashboard" %}
+    {% crumb "المنتجات" "staff:product_list" %}
+    {% crumb "استيراد" %}
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<!-- شاشة انتظار بينما parse_import_file شغالة في celery-worker (راجع
+     products/tasks.py وimport_products_processing في import_export.py).
+     زي أي مصدر تحديث لحظي تاني في النظام (جرس الإشعارات، شريط النسخ
+     الاحتياطي في base.html): WebSocket كمصدر أساسي (سريع فورًا)، وpoll
+     دوري كشبكة أمان لو الاتصال اتقطع أو الرسالة اتفوتت. الاتنين بينادوا
+     نفس الرابط (import_products_processing) اللي بيقرر السيرفر بناءً
+     عليه هل نكمل نستنى، نروح لشاشة المراجعة، أو نرجع لصفحة الرفع مع
+     رسالة خطأ. -->
+<div class="bg-white rounded-2xl shadow-sm p-10 flex flex-col items-center text-center gap-4"
+     x-data="importProcessingView()">
+    <div class="w-12 h-12 rounded-full border-4 border-primary-100 border-t-primary-600 animate-spin"></div>
+    <div>
+        <p class="font-semibold text-gray-800">جاري معالجة الملف…</p>
+        <p class="text-sm text-gray-500 mt-1">بنقرأ الملف ونصنّف كل صف — الصفحة هتنتقل لوحدها لما تخلص.</p>
+    </div>
+</div>
+
+<script>
+function importProcessingView() {
+    return {
+        pollTimer: null,
+        wsUnsubscribe: null,
+        recheck() {
+            window.location.href = "{% url 'staff:import_products_processing' %}";
+        },
+        init() {
+            // شبكة أمان: لو الـ WebSocket اتقطع أو الرسالة اتفوتت، بنعيد
+            // التحقق من السيرفر كل 4 ثواني على أي حال.
+            this.pollTimer = setInterval(() => this.recheck(), 4000);
+
+            const handler = (e) => {
+                if (e.detail.event !== 'import_status') return;
+                if (e.detail.status === 'done' || e.detail.status === 'error') {
+                    this.recheck();
+                }
+            };
+            window.addEventListener('biozone:ws-message', handler);
+            this.wsUnsubscribe = () => window.removeEventListener('biozone:ws-message', handler);
+        },
+        destroy() {
+            clearInterval(this.pollTimer);
+            if (this.wsUnsubscribe) this.wsUnsubscribe();
+        },
+    };
+}
+</script>
+
+{% endblock %}

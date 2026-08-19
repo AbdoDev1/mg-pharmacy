@@ -11,6 +11,7 @@
     <meta name="theme-color" content="#0D2B5B">
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+    <script defer src="{% static 'js/pwa-install.js' %}"></script>
     <!-- htmx بيعالج عناصر الصفحة (hx-get, hx-trigger...) لما DOMContentLoaded
          يطلق، فـ defer آمن هنا (بيأجل تحميل/تنفيذ السكريبت لحد ما الـ HTML
          يخلص parsing، بدل ما يوقف الرندر وهو بيتحمّل زي ما كان). ده بيقلل
