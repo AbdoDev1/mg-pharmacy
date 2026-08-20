@@ -165,8 +165,15 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz/"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 6
+      # كانت 30s وبقت 90s: الخدمة دي بتنفّذ migrate + collectstatic +
+      # إقلاع 2 worker (gunicorn/uvicorn) تحت cpus: 0.5 بس — نفس القيد
+      # اللي بيسبب throttling حقيقي وقت الإقلاع (لاحظنا 25 ثانية بين
+      # "Listening at" و"Started server process" لوحدها). الـ80 ثانية
+      # القديمة (30 + 5×10) كانت بالكاد كافية فعليًا وبتفشل تحت أي إبطاء
+      # إضافي وقت التشغيل الأول (تضارب مع db/redis/pgbouncer بيقلعوا في
+      # نفس الوقت على نفس الـ4 كور الفعلية). دلوقتي 90 + 6×10 = 150s.
+      start_period: 90s
     # نص قيمة Biozone تقريبًا (1.0 → 0.5) — نفس الافتراض المذكور في
     # تعليق db فوق (حركة mg أقل حاليًا، افتراض مش قياس). ده أكتر رقم
     # يستاهل مراجعة بعد أول أسبوع تشغيل حقيقي: لو mg فعليًا بيستقبل
@@ -174,7 +181,7 @@ services:
     # GUNICORN_WORKERS_STORE=2 (مضبوطة في .env.production) متسقة معاه —
     # راجع الملاحظة عن uvicorn async worker في المحادثة.
     mem_limit: 350m
-    cpus: 0.5
+    cpus: 1.5
 
   # خدمة "الموظفين" — كل حاجة تحت /staff/ (nginx بيوجّهها هنا، راجع
   # nginx/nginx.conf).
@@ -196,9 +203,11 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz/"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
-    # ✅ export_products (تصدير المنتجات) اتنقلت لـ Celery (راجع
+      retries: 6
+      # نفس تعديل web-store وبنفس السبب: إقلاع gunicorn/uvicorn worker
+      # تحت cpus: 0.25 (أضيق حتى من store) بيتأخر أكتر من الـ80 ثانية
+      # القديمة (30 + 5×10). دلوقتي 90 + 6×10 = 150s برضه.
+      start_period: 90s
     # products/tasks.py — build_products_export، وتقرير الديون التقنية
     # البند 2) — زي الاستيراد بالظبط، بناء الملف بقى بيحصل في
     # celery-worker مش جوه web-staff. القيمة هنا لسه نص قيمة Biozone
