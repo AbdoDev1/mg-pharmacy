@@ -11,7 +11,7 @@
 // (css/js/fonts/icons)، واللي أصلاً متكاشيه المتصفح لمدة سنة كاملة (راجع
 // كومنتات base.html) فمفيش فايدة حقيقية إضافية من التخزين ده غير تحقيق
 // شرط الـ installability.
-const STATIC_CACHE = 'biozone-static-v1';
+const STATIC_CACHE = 'mg-pharmacy-static-v1';
 
 self.addEventListener('install', () => {
     self.skipWaiting();
