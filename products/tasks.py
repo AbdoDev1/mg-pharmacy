@@ -6,22 +6,30 @@
 القراءة — ده اللي كان بيسبب 504 من nginx مع ملفات كبيرة نسبيًا (موثّق في
 نتائج اختبار baseline بالمرحلة 0).
 
-التصميم: الطلب الأصلي بيحفظ الملف المرفوع في مسار مؤقت مشترك (راجع
-staff/views/products/import_export.py — IMPORT_TMP_DIR، مونت مشترك بين
-web-store/web-staff/celery-worker في docker-compose.yml) ويرجع فورًا،
-والـ task هنا هي اللي بتقرا الملف فعليًا وتخزّن النتيجة في *نفس جلسة*
-الموظف اللي رفع الملف (عن طريق session_key، مش request.session مباشرة —
-مفيش request أصلًا هنا) عشان شاشة المراجعة (import_products_review)
-تلاقيها جاهزة تمامًا زي لو كانت اتحسبت جوه الطلب نفسه. آخر خطوة: بث شخصي
-عبر WebSocket للموظف ده بس (مش كل الموظفين زي حالة النسخ الاحتياطي في
-staff/services/backup.py — راجعها كمرجع لنفس نمط البث) عشان يعرف إن
-المعالجة خلصت من غير ما يعمل refresh يدوي.
+parse_import_file (تحت) منقولة لتخزين النتيجة في الكاش (Redis) بدل جلسة
+الموظف مباشرة — راجع تعليق IMPORT_RESULT_CACHE_PREFIX تحت لسبب النقل ده.
+build_products_export لسه بتستخدم الجلسة+WebSocket القديمة (مفيش داعي
+لنفس التعديل هنا دلوقتي — نطاق التغيير الحالي الاستيراد بس).
 """
 import os
 import uuid
 
 from celery import shared_task
 from django.contrib.sessions.backends.db import SessionStore
+from django.core.cache import cache
+
+# نتيجة قراءة ملف الاستيراد بتتخزن في الكاش بدل الجلسة، لأن الجلسة
+# مرتبطة بـsession_key الطلب اللي أنشأها، وممكن (نظريًا) يختلف عن
+# session_key المتصفح وقت الـpoll (تجديد كوكي، جلسة جديدة...الخ). التخزين
+# بمفتاح مبني على user_id بدل session_key بيقفل الاحتمال ده تمامًا — نتيجة
+# استيراد الموظف مرتبطة بيه هو نفسه، مش بجلسة معيّنة. مفتاح لكل موظف عشان
+# كل واحد يلاقي نتيجة استيراده هو بس.
+IMPORT_RESULT_CACHE_PREFIX = 'product_import_result:'
+IMPORT_RESULT_TTL = 60 * 30  # 30 دقيقة — كفاية للموظف يفتح شاشة المراجعة
+
+
+def import_result_cache_key(user_id):
+    return f'{IMPORT_RESULT_CACHE_PREFIX}{user_id}'
 
 
 def _notify_user(user_id, event_type, status):
@@ -51,57 +59,77 @@ def _notify_user(user_id, event_type, status):
         pass
 
 
-@shared_task(bind=True)
-def parse_import_file(self, session_key, tmp_path, max_rows, user_id):
+@shared_task(bind=True, soft_time_limit=600, time_limit=900)
+def parse_import_file(self, tmp_path, max_rows, user_id):
     """
     بتتنفذ في celery-worker. بتقرا وتصنّف ملف الإكسل المحفوظ مؤقتًا في
     tmp_path (بنفس دالة القراءة الأصلية read_import_workbook — مفيش أي
     تغيير في منطق التصنيف نفسه، بس نقل مكان تنفيذه)، وتخزّن النتيجة في
-    جلسة الموظف تحت نفس المفاتيح اللي كانت staff/views/products/import_export.py
-    بتحطها فيها مباشرة قبل النقل.
+    الكاش (مفتاح مبني على user_id — راجع IMPORT_RESULT_CACHE_PREFIX فوق)
+    بدل جلسة الموظف زي قبل كده. آخر خطوة: إشعار دائم للموظف عبر
+    notifications.services.notify — بيوصله فورًا لو فاتح المتصفح (نفس
+    آلية بث الجرس اللحظي المستخدمة لباقي الإشعارات في النظام)، وبيفضل
+    منتظره في الجرس لو قفل التاب أو رجع بعد وقت طويل.
     """
     # استيراد داخل الدالة (مش أعلى الملف) عشان نتجنب استيراد دائري بين
     # products.tasks وstaff.views.products.import_export (اللي بيستورد
     # منها) — نفس أسلوب notifications/services.py.
-    from staff.views.products.import_export import (
-        IMPORT_SESSION_KEY,
-        IMPORT_STATUS_SESSION_KEY,
-    )
     from products.services import import_export as import_export_service
-
-    session = SessionStore(session_key=session_key)
 
     try:
         with open(tmp_path, 'rb') as f:
             rows, errors, error_message = import_export_service.read_import_workbook(
                 f, max_rows=max_rows,
             )
+        result = {'status': 'done', 'rows': rows, 'errors': errors, 'error_message': error_message}
     except Exception as e:
-        rows, errors, error_message = [], [], f'خطأ غير متوقع أثناء معالجة الملف: {str(e)}'
+        # بيغطي أي استثناء غير متوقع أثناء القراءة، بما فيها تجاوز مهلة
+        # المعالجة (SoftTimeLimitExceeded — استثناء عادي قابل للالتقاط
+        # هنا، مش SIGKILL؛ ده بيحصل بس لو اتعدّت مهلة time_limit الصلبة
+        # فوق كمان، وهي حالة نادرة جدًا مقارنة بالـsoft limit).
+        result = {'status': 'failed', 'error_message': f'حصل خطأ غير متوقع أثناء معالجة الملف: {e}'}
     finally:
         try:
             os.remove(tmp_path)
         except OSError:
             pass
 
-    if error_message:
-        status = {'state': 'error', 'message': error_message}
-    elif not rows:
-        # نفس رسالة المسار المتزامن القديم بالظبط — التحذيرات التفصيلية
-        # (errors) كانت بتتعرض كـ messages.warning منفصلة لكل واحدة؛ هنا
-        # بنكتفي بالعدد الإجمالي في رسالة واحدة عشان مفيش request نبعتلها
-        # عدة رسايل منفصلة.
+    if result['status'] == 'done' and not result.get('rows') and not result.get('error_message'):
+        # نفس رسالة المسار القديم بالظبط — التحذيرات التفصيلية (errors)
+        # كانت بتتعرض كـ messages.warning منفصلة لكل واحدة؛ هنا بنكتفي
+        # بالعدد الإجمالي في رسالة واحدة عشان مفيش request نبعتلها عدة
+        # رسايل منفصلة.
         message = 'مفيش أي صف صالح في الملف.'
-        if errors:
-            message += f' ({len(errors)} صف اتجاهل — راجع صيغة القالب.)'
-        status = {'state': 'error', 'message': message}
-    else:
-        session[IMPORT_SESSION_KEY] = {'rows': rows, 'errors': errors}
-        status = {'state': 'done'}
+        if result.get('errors'):
+            message += f' ({len(result["errors"])} صف اتجاهل — راجع صيغة القالب.)'
+        result = {'status': 'failed', 'error_message': message}
 
-    session[IMPORT_STATUS_SESSION_KEY] = status
-    session.save()
-    _notify_user(user_id, 'import_status', status['state'])
+    cache.set(import_result_cache_key(user_id), result, timeout=IMPORT_RESULT_TTL)
+
+    from accounts.models import User
+    from notifications.services import notify
+
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return
+
+    if result['status'] == 'done' and not result.get('error_message'):
+        notify(
+            recipient=user,
+            kind='IMPORT_READY',
+            title='ملف الاستيراد جاهز للمراجعة',
+            message=f"تم تجهيز {len(result['rows'])} صف — افتح شاشة المراجعة.",
+            url_name='staff:import_products_review',
+        )
+    else:
+        notify(
+            recipient=user,
+            kind='IMPORT_READY',
+            title='مشكلة في قراءة ملف الاستيراد',
+            message=result.get('error_message') or 'حصل خطأ غير متوقع أثناء قراءة الملف.',
+            url_name='staff:import_products',
+        )
 
 
 @shared_task(bind=True)

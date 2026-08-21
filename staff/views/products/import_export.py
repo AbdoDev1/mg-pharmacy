@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render, redirect
@@ -27,11 +28,11 @@ from staff.excel_utils import workbook_response
 
 IMPORT_SESSION_KEY = 'product_import_batch'
 IMPORT_ERRORS_SESSION_KEY = 'product_import_last_errors'
-# حالة معالجة الاستيراد بالخلفية (Celery) — {'state': 'processing'|'done'|'error',
-# 'message': '...' (لو error بس)}. راجع products/tasks.py (parse_import_file)
-# وimport_products_processing تحت لتفاصيل الاستخدام الكامل (البند 2.5 من
-# خطة biozone: نقل القراءة/التصنيف من جوه طلب HTTP لـ worker منفصل).
-IMPORT_STATUS_SESSION_KEY = 'product_import_status'
+# ملحوظة: نتيجة معالجة الاستيراد بالخلفية (Celery) بقت متخزنة في الكاش
+# (Redis) بمفتاح مبني على user_id — راجع products/tasks.py
+# (import_result_cache_key) — مش في الجلسة زي قبل كده، عشان نتيجة
+# استيراد الموظف تفضل مرتبطة بيه هو نفسه مش بـsession_key معيّن (شوف
+# import_products_status وimport_products_review تحت).
 # مسار مؤقت مشترك بين web-store/web-staff/celery-worker (bind mount واحد،
 # راجع docker-compose.yml) — هنا بس بيتخزن الملف المرفوع لحد ما الـ task
 # تقراه وتمسحه؛ مش media حقيقي ومش متاح عبر nginx.
@@ -108,47 +109,33 @@ def import_products(request):
             )
             return redirect('staff:import_products')
 
-        # لازم session_key موجود فعليًا قبل ما نمرره للـ task (الـ task
-        # بتشتغل في process تاني تمامًا، مقدرش تعتمد على request.session
-        # لسه معملهاش save() لو كانت الجلسة لسه فاضية/جديدة).
-        if not request.session.session_key:
-            request.session.save()
-
         IMPORT_TMP_DIR.mkdir(parents=True, exist_ok=True)
         tmp_path = IMPORT_TMP_DIR / f'{uuid.uuid4().hex}.xlsx'
         with open(tmp_path, 'wb') as f:
             for chunk in excel_file.chunks():
                 f.write(chunk)
 
-        request.session[IMPORT_STATUS_SESSION_KEY] = {'state': 'processing'}
-        from products.tasks import parse_import_file
-        parse_import_file.delay(
-            request.session.session_key, str(tmp_path), IMPORT_MAX_ROWS, request.user.pk,
-        )
-        return redirect('staff:import_products_processing')
+        from products.tasks import import_result_cache_key, parse_import_file
+        # نظّف أي نتيجة استيراد سابقة لنفس الموظف (لو رفع ملف قبل كده
+        # ولسه فاتح الشاشة) عشان شاشة الانتظار متتأكدش من نتيجة قديمة غلط.
+        cache.delete(import_result_cache_key(request.user.pk))
+        parse_import_file.delay(str(tmp_path), IMPORT_MAX_ROWS, request.user.pk)
+
+        return render(request, 'staff/products/import_processing.html')
     return render(request, 'staff/products/import.html')
 
 
 @perm_required('products.add_product')
-def import_products_processing(request):
+def import_products_status(request):
     """
-    شاشة انتظار بينما الـ task شغالة في celery-worker — بتتحقق من حالة
-    الاستيراد المخزّنة في الجلسة (راجع import_products أعلاه وproducts/tasks.py)
-    وتحوّل تلقائيًا لشاشة المراجعة (done) أو ترجع لصفحة الرفع مع رسالة
-    الخطأ (error) أول ما تلاقيهم. القالب نفسه بيسمع بث WebSocket شخصي
-    (import_status) عشان يعيد التحقق فورًا من غير ما يستنى الـ poll
-    الدوري (شبكة أمان لو الـ WebSocket اتقطع — نفس أسلوب جرس الإشعارات).
+    Endpoint خفيف بتستدعيه شاشة الانتظار (import_processing.html) كل
+    ثانيتين عن طريق JS بسيط — بيتأكد هل مهمة Celery خلصت (النتيجة موجودة
+    في الكاش) ولا لسه. مفيش حاجة تقيلة هنا، مجرد قراءة كاش — عكس الشكل
+    القديم اللي كان بيعمل full page reload كامل لصفحة الانتظار نفسها.
     """
-    status = request.session.get(IMPORT_STATUS_SESSION_KEY)
-    if not status:
-        return redirect('staff:import_products')
-    if status.get('state') == 'done':
-        return redirect('staff:import_products_review')
-    if status.get('state') == 'error':
-        del request.session[IMPORT_STATUS_SESSION_KEY]
-        messages.error(request, status.get('message', 'حصل خطأ أثناء معالجة الملف.'))
-        return redirect('staff:import_products')
-    return render(request, 'staff/products/import_processing.html')
+    from products.tasks import import_result_cache_key
+    cached = cache.get(import_result_cache_key(request.user.pk))
+    return JsonResponse({'ready': cached is not None})
 
 
 @perm_required('products.add_product')
@@ -160,16 +147,25 @@ def import_products_review(request):
     """
     batch = request.session.get(IMPORT_SESSION_KEY)
     if not batch:
-        # لسه معلّقة في الـ celery-worker (مثلاً الموظف فتح لينك الصفحة
-        # مباشرة أو عمل refresh قبل ما الـ task تخلص) — نرجّعه لشاشة
-        # الانتظار بدل رسالة خطأ مضلّلة.
-        status = request.session.get(IMPORT_STATUS_SESSION_KEY)
-        if status and status.get('state') == 'processing':
-            return redirect('staff:import_products_processing')
+        # أول ما يوصل هنا (من رابط الإشعار أو تحويلة شاشة الانتظار)،
+        # النتيجة لسه في الكاش (Celery حطها هناك، مش في السيشن — راجع
+        # products/tasks.py). ننقلها للسيشن مرة واحدة عشان باقي شاشات
+        # الاستيراد (التأكيد، الأخطاء) تفضل شغالة زي ما هي بالظبط.
+        from products.tasks import import_result_cache_key
+        cached = cache.get(import_result_cache_key(request.user.pk))
+        if cached and cached.get('status') == 'done' and not cached.get('error_message'):
+            batch = {'rows': cached['rows'], 'errors': cached['errors']}
+            request.session[IMPORT_SESSION_KEY] = batch
+            cache.delete(import_result_cache_key(request.user.pk))
+        elif cached:
+            messages.error(request, cached.get('error_message') or 'حصل خطأ أثناء قراءة الملف.')
+            cache.delete(import_result_cache_key(request.user.pk))
+            return redirect('staff:import_products')
+
+    if not batch:
         messages.error(request, 'مفيش عملية استيراد جارية. من فضلك ارفع الملف تاني.')
         return redirect('staff:import_products')
 
-    request.session.pop(IMPORT_STATUS_SESSION_KEY, None)
     rows = batch['rows']
     all_update_rows = [r for r in rows if r['action'] == 'update']
     all_create_rows = [r for r in rows if r['action'] == 'create']
@@ -310,9 +306,11 @@ def export_products(request):
 @perm_required('products.view_product')
 def export_products_processing(request):
     """
-    شاشة انتظار بينما build_products_export شغالة في celery-worker — نفس
-    فكرة import_products_processing بالظبط (راجعها للتفاصيل الكاملة عن
-    آلية الـ poll + WebSocket)، بس بتحوّل لتحميل الملف الجاهز بدل شاشة مراجعة.
+    شاشة انتظار بينما build_products_export شغالة في celery-worker — لسه
+    على نمط الجلسة + WebSocket + full page reload القديم (بعكس الاستيراد
+    اللي بقى بيستخدم كاش + fetch خفيف، راجع import_products_status
+    وproducts/tasks.py — parse_import_file للتفاصيل)، بتحوّل لتحميل
+    الملف الجاهز بدل شاشة مراجعة.
     """
     status = request.session.get(EXPORT_STATUS_SESSION_KEY)
     if not status:
