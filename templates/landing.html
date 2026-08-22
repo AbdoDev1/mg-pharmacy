@@ -223,29 +223,38 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
 </div>
 {% endif %}
 
-<!-- Benefits — قيم وصفية عامة، مش أرقام أو إحصائيات. -->
+<!-- Benefits — قيم وصفية عامة، مش أرقام أو إحصائيات. عرض
+     زجزاج (icon يمين/شمال بالتبادل) بدل 4 كروت متساوية، عشان
+     القسم ده يبقى مختلف بصريًا عن قسم "Trust badges" اللي فوق
+     في الـ hero، رغم إن المحتوى شبه بعضه (كلاهما نقط ثقة قصيرة). -->
 <div class="py-12">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+    <div class="max-w-4xl mx-auto px-4 space-y-6">
+        <div class="flex items-center gap-5">
+            <div class="shrink-0 w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center text-gold-500 text-2xl">✦</div>
             <div>
-                <div class="text-gold-500 text-3xl mb-2">✦</div>
-                <h3 class="font-bold text-sm text-primary-800 mb-1">سهولة الشراء</h3>
-                <p class="text-gray-500 text-xs">تصفح واطلب منتجاتك بسهولة</p>
+                <h3 class="font-bold text-primary-800 mb-0.5">سهولة الشراء</h3>
+                <p class="text-gray-500 text-sm">تصفح واطلب منتجاتك بسهولة</p>
             </div>
+        </div>
+        <div class="flex items-center gap-5 flex-row-reverse text-right">
+            <div class="shrink-0 w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center text-gold-500 text-2xl">♧</div>
             <div>
-                <div class="text-gold-500 text-3xl mb-2">♧</div>
-                <h3 class="font-bold text-sm text-primary-800 mb-1">خدمة عملاء مميزة</h3>
-                <p class="text-gray-500 text-xs">فريق جاهز لمساعدتك</p>
+                <h3 class="font-bold text-primary-800 mb-0.5">خدمة عملاء مميزة</h3>
+                <p class="text-gray-500 text-sm">فريق جاهز لمساعدتك</p>
             </div>
+        </div>
+        <div class="flex items-center gap-5">
+            <div class="shrink-0 w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center text-gold-500 text-2xl">♢</div>
             <div>
-                <div class="text-gold-500 text-3xl mb-2">♢</div>
-                <h3 class="font-bold text-sm text-primary-800 mb-1">منتجات موثوقة</h3>
-                <p class="text-gray-500 text-xs">نهتم بجودة المنتجات</p>
+                <h3 class="font-bold text-primary-800 mb-0.5">منتجات موثوقة</h3>
+                <p class="text-gray-500 text-sm">نهتم بجودة المنتجات</p>
             </div>
+        </div>
+        <div class="flex items-center gap-5 flex-row-reverse text-right">
+            <div class="shrink-0 w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center text-gold-500 text-2xl">✓</div>
             <div>
-                <div class="text-gold-500 text-3xl mb-2">✓</div>
-                <h3 class="font-bold text-sm text-primary-800 mb-1">ضمان رضا العملاء</h3>
-                <p class="text-gray-500 text-xs">نسعى لتجربة شراء أفضل</p>
+                <h3 class="font-bold text-primary-800 mb-0.5">ضمان رضا العملاء</h3>
+                <p class="text-gray-500 text-sm">نسعى لتجربة شراء أفضل</p>
             </div>
         </div>
     </div>

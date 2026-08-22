@@ -89,12 +89,12 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
             {% for item in items_page %}
-            <tr class="{% if item.is_amended %}bg-orange-50{% elif item.is_service_fee %}bg-blue-50{% endif %}">
+            <tr class="{% if item.is_amended %}bg-orange-50{% elif item.is_service_fee %}bg-primary-50{% endif %}">
                 <td class="px-4 py-3 sticky-col">
                     <p class="font-medium text-gray-800">
                         {{ item.display_name }}
                         {% if item.is_service_fee %}
-                        <span class="inline-block bg-blue-100 text-blue-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mr-1 align-middle">خدمة</span>
+                        <span class="inline-block bg-primary-100 text-primary-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mr-1 align-middle">خدمة</span>
                         {% endif %}
                     </p>
                     {% if not item.is_service_fee %}<p class="text-xs text-gray-400">{{ item.product_unit.name }}</p>{% endif %}

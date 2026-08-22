@@ -93,7 +93,7 @@
                     <td class="py-2 text-gray-400">{{ item.display_index }}</td>
                     <td class="py-2">
                         {{ item.display_name }}
-                        {% if item.is_service_fee %}<span class="text-[10px] text-blue-600">(خدمة)</span>{% endif %}
+                        {% if item.is_service_fee %}<span class="text-[10px] text-gray-500">(خدمة)</span>{% endif %}
                         {% if item.is_amended %}
                         <p class="text-xs text-orange-600">كانت: {{ item.original_quantity }}</p>
                         {% endif %}
