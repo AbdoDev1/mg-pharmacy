@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ product.name_ar }} — MG Pharmacy{% endblock %}
+
+{% block body_attrs %}
+hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#cart-badge',swap:'innerHTML'})"
+{% endblock %}
+
+{% block content %}
+
+<div class="max-w-6xl mx-auto px-4 py-8">
+
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-400 mb-6">
+      <a href="{% url 'store:home' %}" class="hover:text-primary-600">المتجر</a>
+      <span class="mx-2">/</span>
+      <a href="{% url 'store:home' %}?category={{ product.category.slug }}" class="hover:text-primary-600">{{ product.category.name }}</a>
+      <span class="mx-2">/</span>
+      <span class="text-gray-600">{{ product.name_ar }}</span>
+    </div>
+
+    <!-- الشبكة الرئيسية: كارت منتج مدمج (يفضل ظاهر وقت السكرول) + عمود
+         أعرض جنبه للمنتجات المشابهة/المكمّلة، بدل ما المنتج ياخد عرض
+         الصفحة كله في صف لوحده وباقي الصفحة تتلخّص في مسافة فاضية. -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+      <!-- كارت المنتج المدمج -->
+      <div class="lg:col-span-4 lg:sticky lg:top-6">
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+
+          <!-- صورة -->
+          <div class="w-full sm:max-w-[200px] sm:mx-auto mb-4">
+            {% if product.image %}
+              {% comment %}
+              صفحة تفاصيل بس (منتج واحد، مش شبكة) — الصورة الأصلية كاملة
+              (product.image.image.url) بلا thumbnail، مطابق لملاحظة
+              المرحلة 8 في STUDIO_PLAN.md: "مفيش قلق أداء من استعلام/تحميل
+              إضافي هنا".
+              {% endcomment %}
+              <img src="{{ product.image.image.url }}" alt="{{ product.name_ar }}" loading="lazy"
+                   class="w-full rounded-xl object-cover aspect-square">
+            {% else %}
+              <div class="w-full aspect-square bg-gray-100 rounded-xl flex items-center justify-center text-gray-300">
+                <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
+                </svg>
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- بيانات -->
+          <p class="text-primary-600 text-sm mb-1">{{ product.category.name }}</p>
+          <h1 class="text-xl font-bold text-gray-800 mb-1">{{ product.name_ar }}</h1>
+          {% if product.name_en %}
+            <p class="text-gray-400 text-sm mb-2">{{ product.name_en }}</p>
+          {% endif %}
+          {% if product.manufacturer %}
+            <p class="text-sm text-gray-500 mb-4">الشركة المصنعة: <span class="font-medium">{{ product.manufacturer }}</span></p>
+          {% endif %}
+          {% if product.description %}
+            <p class="text-gray-600 text-sm leading-relaxed mb-6">{{ product.description }}</p>
+          {% endif %}
+
+
+          <!-- الوحدة والسعر -->
+          <div class="space-y-3">
+            <h2 class="font-bold text-gray-700">الوحدة</h2>
+            {% load cart_tags %}
+
+            {% if not units %}
+              <p class="text-sm text-gray-400">مفيش وحدات بيع متاحة لهذا المنتج حاليًا.</p>
+            {% elif not request.user.is_authenticated %}
+              {% comment %}
+              لا يظهر السعر أو خيار الشراء قبل تسجيل الدخول — رسالة واحدة
+              بغض النظر عن عدد الوحدات، لأن المحتوى واحد سواء عنده وحدة
+              أو أكتر.
+              {% endcomment %}
+              <a href="{% url 'accounts:register' %}"
+                 class="block bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg transition text-center">
+                يرجى تسجيل الدخول لعرض السعر وإتمام الطلب
+              </a>
+            {% else %}
+              <!-- المرحلة 6: العميل يختار الوحدة بنفسه (بدل اختيار تلقائي
+                   واحد بس حسب نوع حسابه). كل الوحدات بأسعارها وخصومها
+                   وحالة توفرها متحسوبة من السيرفر مسبقًا زي ما هي بالظبط —
+                   Alpine هنا بيبدّل أي لوحة ظاهرة بس (x-show)، مفيش أي إعادة
+                   حساب سعر في الـ JS، فمستحيل يختلف السعر المعروض عن اللي
+                   هيتحسب فعليًا وقت الإضافة للسلة. -->
+              <div x-data="{ selected: '{{ default_unit_id|default:units.0.pk }}' }">
+
+                {% if units|length > 1 %}
+                <div class="flex gap-2 flex-wrap mb-3" role="radiogroup" aria-label="اختر الوحدة">
+                  {% for unit in units %}
+                  <button type="button"
+                          role="radio"
+                          :aria-checked="selected === '{{ unit.pk }}'"
+                          @click="selected = '{{ unit.pk }}'"
+                          :class="selected === '{{ unit.pk }}' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'"
+                          class="px-4 py-2 rounded-xl border text-sm font-semibold transition">
+                    {{ unit.name }}
+                  </button>
+                  {% endfor %}
+                </div>
+                {% endif %}
+
+                {% with inv=product.inventory %}
+                {% for unit in units %}
+                <div x-show="selected === '{{ unit.pk }}'" x-cloak
+                     class="border border-gray-200 rounded-xl p-4">
+
+                  {% with discount_percent=unit|discount_percent_for_client:request.user %}
+                  {% if site_config.show_discounted_prices and discount_percent > 0 %}
+                    <div class="flex items-baseline gap-1.5 flex-wrap mb-0.5">
+                      <p class="text-green-700 font-bold text-lg">{{ unit|price_for_client:request.user }} ج.م</p>
+                      <p class="text-gray-400 line-through text-sm">{{ unit.unit_price }} ج.م</p>
+                      <span class="bg-red-50 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded">خصم {{ discount_percent|floatformat:0 }}%</span>
+                    </div>
+                  {% else %}
+                    <p class="text-gray-800 font-bold text-lg mb-0.5">{{ unit.unit_price }} ج.م</p>
+                  {% endif %}
+                  {% endwith %}
+
+                  {% if request.user.role == 'CLIENT' and request.user.status == 'ACTIVE' %}
+                    {% if inv and inv.is_available %}
+                      {% with quantity=cart_quantities|get_item:unit.pk %}
+                        {% include "orders/partials/cart_controls.html" with unit_id=unit.pk quantity=quantity|default:0 %}
+                      {% endwith %}
+                    {% else %}
+                      <button disabled class="mt-2 w-full bg-gray-100 text-gray-400 text-xs py-2 px-4 rounded-lg cursor-not-allowed">
+                        غير متوفر حالياً
+                      </button>
+                    {% endif %}
+                  {% endif %}
+                </div>
+                {% endfor %}
+                {% endwith %}
+              </div>
+            {% endif %}
+          </div>
+
+        </div>
+      </div>
+
+      <!-- عمود الروابط: منتجات مشابهة/مكمّلة — منظّمة جنب المنتج بدل ما
+           تتلخّص أسفل الصفحة بعد مسافة فاضية طويلة. -->
+      <div class="lg:col-span-8 space-y-8">
+        {% include "store/partials/related_products_carousel.html" with products=similar_products heading="منتجات مشابهة" %}
+        {% include "store/partials/related_products_carousel.html" with products=complementary_products heading="غالبًا ما يُطلب معه" %}
+        {% if not similar_products and not complementary_products %}
+        <div class="bg-white rounded-2xl shadow-sm p-6 text-center">
+          <p class="text-gray-500 text-sm mb-3">مفيش منتجات مقترحة لهذا الصنف حاليًا</p>
+          <a href="{% url 'store:home' %}?category={{ product.category.slug }}"
+             class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg transition">
+            تصفح باقي {{ product.category.name }}
+          </a>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

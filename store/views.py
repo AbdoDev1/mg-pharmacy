@@ -1,4 +1,5 @@
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404
@@ -25,6 +26,10 @@ def _cart_quantities(request):
 
 
 PRODUCTS_PER_PAGE = 24
+
+# يستاهل مراجعة لو حسّيت إن تحديث عدد المنتجات في السايدبار بعد
+# إضافة/تعديل صنف بطيء أكتر من اللازم بالنسبة لك.
+CATALOG_FILTERS_CACHE_TTL = 60
 
 
 def _base_products_queryset():
@@ -86,13 +91,29 @@ def _categories_with_counts():
     عشان الرقم الظاهر تحت كل قسم يبقى حقيقي من قاعدة البيانات مش hardcoded.
     select_related('image') لتفادي استعلام إضافي لكل قسم وقت عرض صورته
     (studio.StudioImage) في القالب.
+
+    مكاشة (CATALOG_FILTERS_CACHE_TTL ثانية) — بتتنفذ على كل طلب لـ
+    store_home وnew_arrivals من غير كاش (كانت استعلام aggregate على كل
+    الكتالوج في كل طلب)، رغم إن عدد المنتجات لكل قسم بيتغيّر ببطء شديد
+    مقارنة بمعدل الزيارات. تحت حمل متزامن (تصفح 30 مستخدم مع بعض)، ده
+    كان بيطوّل وقت كل طلب على الـthread المزدحم أصلًا (راجع نقاش
+    thread_sensitive في المحادثة) ويفاقم الطابور بدل ما يقلله. الكاش هنا
+    مش حل لمشكلة الـconcurrency نفسها، لكنه بيقلل الوقت اللي كل طلب بياخده،
+    فبيسرّع تصريف الطابور. TTL قصير (60 ثانية) — يعني تحديث عدد المنتجات
+    ممكن ياخد لحد دقيقة يظهر في السايدبار، قرار مقصود (مش حرج) بدل ما
+    نعقّد الموضوع بـinvalidation عند كل تعديل صنف.
     """
-    return (
+    cached = cache.get('store:categories_with_counts')
+    if cached is not None:
+        return cached
+    categories = list(
         Category.objects.filter(is_active=True)
         .select_related('image')
         .annotate(product_count=Count('products', filter=Q(products__is_active=True)))
         .order_by('name')
     )
+    cache.set('store:categories_with_counts', categories, CATALOG_FILTERS_CACHE_TTL)
+    return categories
 
 
 # --- فلتر السايد بار/الدرج (نفس تصميم Biozone بالظبط — راجع
@@ -108,7 +129,12 @@ def _category_options():
     _categories_with_counts() اللي بترجع كل الأقسام النشطة حتى الفاضية —
     مستخدمة لسه في كروت "تصفح حسب الفئة"). مرتبة تنازليًا بعدد المنتجات
     (الأكثر بضاعة فوق)، زي فلتر Biozone بالظبط.
+
+    مكاشة (نفس سبب/TTL _categories_with_counts فوق).
     """
+    cached = cache.get('store:category_options')
+    if cached is not None:
+        return cached
     categories = (
         Category.objects.filter(is_active=True, products__is_active=True)
         .annotate(active_product_count=Count(
@@ -117,10 +143,12 @@ def _category_options():
         .distinct()
         .order_by('-active_product_count', 'name')
     )
-    return [
+    options = [
         {'value': c.slug, 'label': c.name, 'count': c.active_product_count}
         for c in categories
     ]
+    cache.set('store:category_options', options, CATALOG_FILTERS_CACHE_TTL)
+    return options
 
 
 def _manufacturer_options():
@@ -128,7 +156,12 @@ def _manufacturer_options():
     نفس فكرة _category_options() بس للشركة المصنّعة — هنا manufacturer نص
     حر على Product (مش FK)، فبنجمّعها بـ values().annotate() بدل استعلام
     على موديل منفصل. value = label = نفس النص بالظبط (مفيش slug).
+
+    مكاشة (نفس سبب/TTL _categories_with_counts فوق).
     """
+    cached = cache.get('store:manufacturer_options')
+    if cached is not None:
+        return cached
     rows = (
         Product.objects.filter(is_active=True)
         .exclude(manufacturer='')
@@ -136,10 +169,12 @@ def _manufacturer_options():
         .annotate(count=Count('id'))
         .order_by('-count', 'manufacturer')
     )
-    return [
+    options = [
         {'value': r['manufacturer'], 'label': r['manufacturer'], 'count': r['count']}
         for r in rows
     ]
+    cache.set('store:manufacturer_options', options, CATALOG_FILTERS_CACHE_TTL)
+    return options
 
 
 def _selected_label(options, selected_value):

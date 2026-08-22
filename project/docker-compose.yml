@@ -1,0 +1,271 @@
+# ============================================================
+#  MG Pharmacy — Fork مستقل عن Biozone (Phase 0 + بنية pgbouncer/celery
+#  وتقسيم store/staff منقولين من Biozone).
+#  لازم هذا المجلد يكون مسار منفصل تمامًا على السيرفر عن مجلد Biozone
+#  الأصلي (مش subfolder جواه). شغّل الأوامر دايمًا بعلم -p mgpharmacy
+#  صراحةً عشان اسم الـ containers/networks يتفرق عن Biozone حتى لو
+#  اتشغّل بالغلط من نفس المسار الأب:
+#    docker compose -p mgpharmacy up -d --build
+#  Biozone الأصلي بيفضل شغال بالبورت 8080 وباسمه الافتراضي بدون تأثير.
+# ============================================================
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# متغيرات مشتركة بين خدمات web-store / web-staff / celery-worker الاتلاتة
+# (نفس الصورة، نفس ملف env، نفس DNS، بس كل واحدة بـ SERVICE_ROLE مختلف).
+# YAML anchor عشان منكررش نفس البلوك 3 مرات. منقول من Biozone.
+x-web-base: &web-base
+  build: .
+  restart: unless-stopped
+  logging: *default-logging
+  # DNS عام صريح (بدل ما نعتمد على /etc/resolv.conf بتاع الـ host، اللي
+  # بيتقلّد جوه الحاوية تلقائيًا). على سيرفرات سحابية زي Alibaba Cloud،
+  # الـ host بيستخدم DNS داخلي خاص (100.100.100.100) شغال بس من على
+  # الـ host نفسه — مش قابل للوصول من جوه شبكة Docker الداخلية بتاعة
+  # الحاوية، فأي domain خارجي (زي sentry.io) كان بيفشل resolution من
+  # جوه web بالتحديد، حتى لو الـ host نفسه شايف الدنيا تمام.
+  dns:
+    - 8.8.8.8
+    - 1.1.1.1
+  env_file:
+    - .env.production
+  environment: &web-base-environment
+    # كل الخدمات بتتصل عن طريق pgbouncer بدل db مباشرة (راجع تعليق خدمة
+    # pgbouncer تحت).
+    DB_HOST: pgbouncer
+    DB_PORT: 6432
+  volumes:
+    - static_volume_mgpharmacy:/app/staticfiles
+    # bind mount حقيقي بدل named volume — عشان الصور متتفقدش لو حد شغّل
+    # `docker compose down -v`. لازم مجلد ./media يكون موجود على الـ
+    # host قبل أول تشغيل.
+    - ./media:/app/media
+    - ./logs:/app/logs
+    - ./backups:/app/backups
+    # مؤقت لملفات استيراد الإكسل — بين ما web-staff تستلم الملف المرفوع
+    # وما celery-worker تقراه في الخلفية (راجع products/tasks.py —
+    # parse_import_file وstaff/views/products/import_export.py —
+    # IMPORT_TMP_DIR). مش لازم يبقى متاح لـ web-store أو nginx (بتستثنيه
+    # web-store صراحةً تحت — راجع تعليقها)، وعمدًا مش تحت media/ عشان
+    # ميبقاش متاح عن طريق /media/ العام بالخطأ.
+    - ./tmp:/app/tmp
+  depends_on:
+    pgbouncer:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mgpharmacy}
+      POSTGRES_USER: ${DB_USER:-mgpharmacy}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data_mgpharmacy:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mgpharmacy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # البند الأول من تقرير الديون التقنية بتاع mg — منقول من Biozone
+    # (نفس البند اللي اتنفّذ هناك)، لكن **مش نفس الأرقام**. Biozone
+    # مقاسة بحيث المجموع الكلي يبقى 4.0 كور بالظبط — وBiozone وmg شغالين
+    # كستاكين منفصلين على نفس الجهاز الفيزيائي الواحد (4 كور فعلية بس).
+    # لو نسخنا نفس أرقام Biozone هنا زيادة عليها، هيبقى عندنا سقف نظري
+    # 8 كور على جهاز فيه 4، وده بيلغي فايدة القياس/التخصيص كله. القيم
+    # هنا نص أرقام Biozone تقريبًا (افتراض: حركة mg أقل من Biozone حاليًا
+    # — افتراض مش قياس، لازم تتأكد منه). ⚠️ **مش قياس فعلي** — لازم
+    # `docker stats` بعد أسبوع تشغيل حقيقي (للستاكين مع بعض، مش mg
+    # لوحدها) وتعديل الأرقام لو اختلفت عن الواقع.
+    mem_limit: 256m
+    cpus: 0.5
+
+  # Redis مستخدم فعليًا لـ 3 أغراض دلوقتي (CACHES/SESSION_ENGINE،
+  # CHANNEL_LAYERS، وكمان Celery broker/result backend — كل غرض على رقم
+  # DB منفصل جوه نفس Redis، راجع config/settings.py).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - redis_data_mgpharmacy:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # ⚠️ عمدًا **مش** نص قيمة Biozone هنا زي باقي الخدمات. Biozone جرّبوا
+    # 0.25 فعليًا وطلع عندهم CPU throttling حقيقي تحت دفعات رسائل مفاجئة
+    # (broadcast عبر channel layer، أو طابور Celery وقت استيراد) — نفس
+    # المعمارية بالظبط (channel layer + Celery broker على نفس الـ Redis)
+    # موجودة في mg، فنفس المخاطرة قائمة حتى لو الحمل العام أقل. سيبناها
+    # 0.5 زي Biozone بالظبط بدل ما ننزلها.
+    mem_limit: 128m
+    cpus: 0.5
+
+  # PgBouncer — connection pooler بين كل خدمة (web-store, web-staff,
+  # celery-worker) وPostgres. منقول من Biozone بالظبط (راجع
+  # pgbouncer/pgbouncer.ini). كل خدمة بتتصل بـ pgbouncer:6432 دلوقتي
+  # بدل db:5432 مباشرة.
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # الصورة بتولّد userlist.txt تلقائيًا وقت التشغيل من المتغيرات دي
+      # (MD5 hash، مش credential نصي) — مفيش أي سر متخزن في أي ملف متتبع
+      # في git. pgbouncer.ini نفسه (المونت تحت) جاهز مسبقًا، فمفيش تعارض
+      # مع منطق التوليد التلقائي بتاع الصورة.
+      DB_USER: ${DB_USER:-mgpharmacy}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-mgpharmacy}
+      AUTH_TYPE: plain
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U ${DB_USER:-mgpharmacy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 128m
+    cpus: 0.25
+
+  # خدمة "المتجر" — كل حركة الزوار/العملاء العادية (/, /store/, /cart/,
+  # /orders/...). هي الوحيدة اللي بتنفّذ migrate/collectstatic/ensure_admin
+  # عند الإقلاع (راجع entrypoint.sh).
+  web-store:
+    <<: *web-base
+    environment:
+      <<: *web-base-environment
+      SERVICE_ROLE: store
+    # بتعيد تعريف volumes صراحةً هنا (بدل ما تورّث كل قايمة x-web-base
+    # زي ما هي) عشان تستثني ./tmp — دي مخصصة لـ web-staff وceleryworker
+    # بس (استيراد الإكسل، راجع تعليق ./tmp فوق)، مش لازمة لـ web-store.
+    # مفتاح `<<:` بيستبدل القايمة بالكامل هنا لو اتعرّفت تاني، مش بيدمجها
+    # مع الأصل — فلازم نكرر باقي الأربعة سطور زي ما هي بالظبط (نفس
+    # الأسلوب المنقول من Biozone).
+    volumes:
+      - static_volume_mgpharmacy:/app/staticfiles
+      - ./media:/app/media
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # كانت 30s وبقت 90s: الخدمة دي بتنفّذ migrate + collectstatic +
+      # إقلاع 2 worker (gunicorn/uvicorn) تحت cpus: 0.5 بس — نفس القيد
+      # اللي بيسبب throttling حقيقي وقت الإقلاع (لاحظنا 25 ثانية بين
+      # "Listening at" و"Started server process" لوحدها). الـ80 ثانية
+      # القديمة (30 + 5×10) كانت بالكاد كافية فعليًا وبتفشل تحت أي إبطاء
+      # إضافي وقت التشغيل الأول (تضارب مع db/redis/pgbouncer بيقلعوا في
+      # نفس الوقت على نفس الـ4 كور الفعلية). دلوقتي 90 + 6×10 = 150s.
+      start_period: 90s
+    # نص قيمة Biozone تقريبًا (1.0 → 0.5) — نفس الافتراض المذكور في
+    # تعليق db فوق (حركة mg أقل حاليًا، افتراض مش قياس). ده أكتر رقم
+    # يستاهل مراجعة بعد أول أسبوع تشغيل حقيقي: لو mg فعليًا بيستقبل
+    # زوار قريب من حجم Biozone، الرقم ده هيكون قليل عليها ويحتاج يترفع.
+    # GUNICORN_WORKERS_STORE=2 (مضبوطة في .env.production) متسقة معاه —
+    # راجع الملاحظة عن uvicorn async worker في المحادثة.
+    mem_limit: 350m
+    cpus: 1.5
+
+  # خدمة "الموظفين" — كل حاجة تحت /staff/ (nginx بيوجّهها هنا، راجع
+  # nginx/nginx.conf).
+  web-staff:
+    <<: *web-base
+    environment:
+      <<: *web-base-environment
+      SERVICE_ROLE: staff
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # بننتظر web-store يبقى healthy (يعني الميجريشن وcollectstatic
+      # خلصوا) قبل ما نستقبل حمل فعلي.
+      web-store:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # نفس تعديل web-store وبنفس السبب: إقلاع gunicorn/uvicorn worker
+      # تحت cpus: 0.25 (أضيق حتى من store) بيتأخر أكتر من الـ80 ثانية
+      # القديمة (30 + 5×10). دلوقتي 90 + 6×10 = 150s برضه.
+      start_period: 90s
+    # products/tasks.py — build_products_export، وتقرير الديون التقنية
+    # البند 2) — زي الاستيراد بالظبط، بناء الملف بقى بيحصل في
+    # celery-worker مش جوه web-staff. القيمة هنا لسه نص قيمة Biozone
+    # تقريبًا (نفس افتراض حركة mg الأقل حاليًا) — أول رقم يستاهل مراجعة
+    # لو حسّيت بطء عام في لوحة الموظفين (مش خاص بالتصدير تحديدًا دلوقتي).
+    # GUNICORN_WORKERS_STAFF=1 متسقة معاها.
+    mem_limit: 200m
+    cpus: 0.25
+
+  # Celery worker — بيشغّل كل المهام في الخلفية دلوقتي: استيراد/تصدير
+  # ملفات المنتجات (products/tasks.py) والنسخ الاحتياطي اليدوي
+  # (staff/tasks.py — run_backup_task). CELERY_CONCURRENCY=1 يعني
+  # process واحد بيشغّل المهام دي واحدة ورا التانية، مش بالتوازي — لو
+  # الحمل زاد (مثلاً تصدير كبير + نسخة احتياطية في نفس الوقت)، ده أول
+  # رقم يستاهل مراجعة.
+  celery-worker:
+    <<: *web-base
+    environment:
+      <<: *web-base-environment
+      SERVICE_ROLE: celery
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web-store:
+        condition: service_healthy
+    # مفيش healthcheck HTTP هنا (مش gunicorn) — Docker restart policy
+    # (unless-stopped) كفاية للتعافي لو الـ process وقع.
+    # CELERY_CONCURRENCY=1 (مضبوطة في .env.production) متسقة مع نص كور —
+    # process واحد بس، فمفيش داعي لأكتر من نص كور حاليًا لعملية استيراد
+    # واحدة في المرة الواحدة.
+    mem_limit: 200m
+    cpus: 0.25
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume_mgpharmacy:/app/staticfiles:ro
+      - ./media:/app/media:ro
+    depends_on:
+      web-store:
+        condition: service_healthy
+      web-staff:
+        condition: service_healthy
+    # كانت الخدمة الوحيدة من غير حدود موارد (كل خدمة تانية في الملف ده
+    # محدودة). استهلاك nginx كـ reverse proxy بسيط عادةً، بس غياب الحد
+    # كان بيسيبها الاستثناء الوحيد اللي ممكن ياخد موارد بلا سقف وقت أي
+    # مشكلة (حلقة تكرار في config غلط مثلاً). قيمة متواضعة زي pgbouncer.
+    mem_limit: 128m
+    cpus: 0.25
+
+volumes:
+  postgres_data_mgpharmacy:
+  redis_data_mgpharmacy:
+  static_volume_mgpharmacy:

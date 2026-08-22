@@ -28,6 +28,11 @@ class Notification(models.Model):
         # products/tasks.py. نفس النوع بيتستخدم للنجاح والفشل، والفرق
         # في العنوان/الرسالة/الرابط المرفقين وقت إنشاء الإشعار.
         IMPORT_READY = 'IMPORT_READY', 'نتيجة معالجة ملف الاستيراد'
+        # نتيجة مرحلة التأكيد/الحفظ (commit_import_batch_task عبر Celery)
+        # — منفصل عن IMPORT_READY فوق (اللي بيغطي مرحلة القراءة/التصنيف
+        # بس) عشان الموظف يقدر يميّز الإشعارين لو الاتنين وصلوا قريب من
+        # بعض. راجع products/tasks.py — commit_import_batch_task.
+        IMPORT_COMMITTED = 'IMPORT_COMMITTED', 'نتيجة حفظ الاستيراد'
 
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
     kind = models.CharField(max_length=40, choices=Kind.choices)

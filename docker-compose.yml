@@ -241,7 +241,7 @@ services:
     # process واحد بس، فمفيش داعي لأكتر من نص كور حاليًا لعملية استيراد
     # واحدة في المرة الواحدة.
     mem_limit: 200m
-    cpus: 0.25
+    cpus: 0.5
 
   nginx:
     image: nginx:alpine

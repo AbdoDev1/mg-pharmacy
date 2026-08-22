@@ -16,7 +16,6 @@ from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib import messages
-from django.db import transaction
 from django.db.models import Q
 
 from products.models import Category, Product
@@ -197,8 +196,18 @@ def import_products_review(request):
 def import_products_confirm(request):
     """
     المرحلة التانية: بتاخد قرارات الموظف على صفوف "المراجعة" (اتحدد لكل
-    واحد منها إما تحديث صنف بعينه أو إضافته كصنف جديد فعلًا) وتنفّذ الحفظ
-    الفعلي لكل صفوف الدفعة مرة واحدة داخل transaction واحدة.
+    واحد منها إما تحديث صنف بعينه أو إضافته كصنف جديد فعلًا)، وبدل ما
+    تنفّذ الحفظ الفعلي هنا مباشرة (زي قبل كده)، بتخزّن الدفعة في الكاش
+    وتبعتها لـcelery-worker (commit_import_batch_task) وتوجّه الموظف
+    لشاشة انتظار.
+
+    السبب: الحفظ الفعلي لدفعة كبيرة (لحد 3000 صف) جوه transaction واحدة
+    كان بياخد وقت طويل نسبيًا (مئات/آلاف query منفصلة)، وكان شغال جوه
+    نفس طلب HTTP في container web-staff (0.25 CPU بس، أضيق container في
+    المشروع) — يعني بيقفل الـworker طول مدة الحفظ ومعرّض لـtimeout من
+    nginx/gunicorn لو الملف كبير كفاية. نفس السبب اللي خلّى مرحلة القراءة
+    (parse_import_file) تتنقل لـCelery قبل كده — دلوقتي مرحلة التأكيد
+    بتتبع نفس النمط بالظبط.
     """
     if request.method != 'POST':
         return redirect('staff:import_products')
@@ -213,43 +222,71 @@ def import_products_confirm(request):
         row['row_num']: request.POST.get(f"decision_{row['row_num']}", 'new')
         for row in rows if row['action'] == 'review'
     }
-    try:
-        with transaction.atomic():
-            created_count, updated_count, restocked_count = import_export_service.commit_import_batch(
-                rows, decisions, request.user,
-            )
-    except Exception as e:
-        messages.error(request, f'حصل خطأ أثناء الحفظ ولم يتم حفظ أي صنف: {str(e)}')
+
+    from products.tasks import (
+        commit_import_batch_task,
+        import_commit_payload_cache_key,
+        import_commit_result_cache_key,
+    )
+    # نظّف أي نتيجة تأكيد سابقة لنفس الموظف (لو أعاد الضغط على تأكيد قبل
+    # كده ولسه فاتح الشاشة) — نفس فكرة تنظيف نتيجة القراءة القديمة في
+    # import_products قبل الـdelay.
+    cache.delete(import_commit_result_cache_key(request.user.pk))
+    payload = {
+        'rows': rows,
+        'decisions': decisions,
+        'errors': batch.get('errors') or [],
+        'notify_clients': request.POST.get('notify_clients') == 'on',
+    }
+    cache.set(import_commit_payload_cache_key(request.user.pk), payload, timeout=60 * 30)
+    del request.session[IMPORT_SESSION_KEY]
+    commit_import_batch_task.delay(request.user.pk)
+
+    return render(request, 'staff/products/import_committing.html')
+
+
+@perm_required('products.add_product')
+def import_products_commit_status(request):
+    """
+    نظير import_products_status بالظبط بس لمرحلة التأكيد/الحفظ — endpoint
+    خفيف بتستدعيه شاشة الانتظار (import_committing.html) كل ثانيتين،
+    بيتأكد هل commit_import_batch_task خلصت (النتيجة موجودة في الكاش).
+    """
+    from products.tasks import import_commit_result_cache_key
+    cached = cache.get(import_commit_result_cache_key(request.user.pk))
+    return JsonResponse({'ready': cached is not None})
+
+
+@perm_required('products.add_product')
+def import_products_commit_result(request):
+    """
+    بتقرا نتيجة الحفظ (اللي commit_import_batch_task خزّنتها في الكاش)
+    وتحوّلها لـmessages حقيقية — ده لازم يحصل جوه request فعلي (messages
+    framework مرتبط بالـsession، مش متاح جوه Celery task)، نفس فكرة
+    import_products_review بالظبط بالنسبة لنتيجة مرحلة القراءة.
+    """
+    from products.tasks import import_commit_result_cache_key
+    cached = cache.get(import_commit_result_cache_key(request.user.pk))
+    if not cached:
+        messages.error(request, 'مفيش نتيجة حفظ جاهزة. من فضلك ارفع الملف تاني.')
+        return redirect('staff:import_products')
+    cache.delete(import_commit_result_cache_key(request.user.pk))
+
+    if cached['status'] != 'done':
+        messages.error(request, cached.get('error_message') or 'حصل خطأ أثناء الحفظ ولم يتم حفظ أي صنف.')
         return redirect('staff:import_products')
 
-    del request.session[IMPORT_SESSION_KEY]
+    created_count = cached['created_count']
+    updated_count = cached['updated_count']
     if created_count:
         messages.success(request, f'تم إضافة {created_count} صنف جديد.')
     if updated_count:
         messages.success(request, f'تم تحديث {updated_count} صنف موجود.')
-    # قبل كده كان بيتحط toast منفصل لكل سطر فيه مشكلة (ممكن تبقى مئات
-    # التوستات فوق بعض مع ملف كبير) — دلوقتي بنحفظ التفاصيل الكاملة
-    # (مجمّعة حسب نوع المشكلة) في الـ session ونوجّه الموظف لصفحة مخصصة
-    # يراجعها فيها براحته، بدل ما تتفرقع كلها كـ toasts فوق بعض.
 
-    # إشعار العملاء بالوارد الجديد — اختياري، الموظف بيحدده من شاشة المراجعة.
-    # new_arrival_at اتحدّث تلقائيًا لكل صنف جديد أو اتزوّد رصيده (راجع
-    # Product.save و StockMovement.save)، فمفيش داعي نحسب حاجة تانية هنا —
-    # بس نتأكد إن فيه فعلاً حاجة جديدة تستاهل إشعار قبل ما نبعته.
-    new_arrivals_total = created_count + restocked_count
-    if request.POST.get('notify_clients') == 'on' and new_arrivals_total > 0:
-        from notifications.services import notify_all_clients
-        notify_all_clients(
-            kind='NEW_ARRIVALS',
-            title='وارد جديد في المتجر 🆕',
-            message=f'تم إضافة {new_arrivals_total} صنف جديد أو تزويد رصيده — اطّلع على صفحة الوارد.',
-            url_name='store:new_arrivals',
-        )
-        messages.success(request, 'تم إرسال إشعار الوارد الجديد لكل العملاء.')
-
-    if batch['errors']:
-        request.session[IMPORT_ERRORS_SESSION_KEY] = batch['errors']
-        messages.warning(request, f'تم تجاهل {len(batch["errors"])} صف فيهم مشكلة أثناء القراءة — التفاصيل تحت.')
+    errors = cached.get('errors') or []
+    if errors:
+        request.session[IMPORT_ERRORS_SESSION_KEY] = errors
+        messages.warning(request, f'تم تجاهل {len(errors)} صف فيهم مشكلة أثناء القراءة — التفاصيل تحت.')
         return redirect('staff:import_products_errors')
 
     return redirect('staff:product_list')
