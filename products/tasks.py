@@ -8,14 +8,15 @@
 
 parse_import_file (تحت) منقولة لتخزين النتيجة في الكاش (Redis) بدل جلسة
 الموظف مباشرة — راجع تعليق IMPORT_RESULT_CACHE_PREFIX تحت لسبب النقل ده.
-build_products_export لسه بتستخدم الجلسة+WebSocket القديمة (مفيش داعي
-لنفس التعديل هنا دلوقتي — نطاق التغيير الحالي الاستيراد بس).
+build_products_export كانت بتستخدم نفس نمط الجلسة القديم، وده سبب باگ
+حقيقي (لوب تحميل ما بينتهيش) لأن SESSION_ENGINE الفعلي هو cached_db بينما
+الـtask كانت بتكتب بنسخة الـDB الخام — دلوقتي منقولة لنفس نمط الكاش
+(راجع EXPORT_STATUS_CACHE_PREFIX تحت).
 """
 import os
 import uuid
 
 from celery import shared_task
-from django.contrib.sessions.backends.db import SessionStore
 from django.core.cache import cache
 
 # نتيجة قراءة ملف الاستيراد بتتخزن في الكاش بدل الجلسة، لأن الجلسة
@@ -54,6 +55,27 @@ def import_commit_payload_cache_key(user_id):
 
 def import_commit_result_cache_key(user_id):
     return f'{IMPORT_COMMIT_RESULT_PREFIX}{user_id}'
+
+
+# نفس فكرة IMPORT_RESULT_CACHE_PREFIX بالظبط، لكن لتصدير المنتجات
+# (build_products_export تحت) بدل استيرادهم. كان أصلاً بيستخدم جلسة
+# الموظف (session) عبر SessionStore(session_key=...) من
+# django.contrib.sessions.backends.db مباشرة — لكن SESSION_ENGINE
+# الفعلي للمشروع هو cached_db (راجع config/settings.py)، وده بيعني إن
+# أي قراءة لـ request.session في الفيوهات بتتحقق من الكاش (Redis) الأول
+# وترجع منه فورًا لو موجود، من غير ما تلمس قاعدة البيانات خالص. الـ task
+# هنا كان بيكتب بنسخة الـ DB الخام بس (مش cached_db)، فكتابته 'done' كانت
+# بتوصل لقاعدة البيانات ومتوصلش لنسخة الكاش اللي الفيوهات فعليًا بتقرا
+# منها — فالحالة القديمة 'processing' كانت بتفضل هي اللي بترجع للأبد
+# (لوب تحميل ما بينتهيش، حتى لو الملف خلص وجاهز فعليًا على القرص). نفس
+# حل الاستيراد بالظبط: مفتاح كاش مبني على user_id، بعيد عن أي session
+# backend خالص.
+EXPORT_STATUS_CACHE_PREFIX = 'product_export_status:'
+EXPORT_STATUS_TTL = 60 * 30  # 30 دقيقة — كفاية للموظف يفتح شاشة التحميل
+
+
+def export_status_cache_key(user_id):
+    return f'{EXPORT_STATUS_CACHE_PREFIX}{user_id}'
 
 
 def _notify_user(user_id, event_type, status):
@@ -252,7 +274,7 @@ def commit_import_batch_task(self, user_id):
 
 
 @shared_task(bind=True)
-def build_products_export(self, session_key, product_ids, filename, user_id):
+def build_products_export(self, product_ids, filename, user_id):
     """
     نظير parse_import_file بس للاتجاه المعاكس: بناء ملف تصدير المنتجات
     (export_products / export_products_selected) كان بيحصل بشكل متزامن
@@ -263,18 +285,17 @@ def build_products_export(self, session_key, product_ids, filename, user_id):
     (export_products_selected). الملف بيتكتب في مسار مؤقت مشترك (راجع
     staff/views/products/import_export.py — EXPORT_TMP_DIR، نفس مونت
     ./tmp المستخدم للاستيراد) باسم عشوائي (uuid) عشان نمنع أي تخمين لمسار
-    ملف موظف تاني. حالة الانتهاء + اسم التحميل الأصلي بيتخزنوا في جلسة
-    الموظف (EXPORT_STATUS_SESSION_KEY)، وview التحميل هي اللي بتتأكد إن
-    التوكن في الرابط مطابق للمخزّن في جلسته قبل ما تقدّم الملف.
+    ملف موظف تاني. حالة الانتهاء + اسم التحميل الأصلي بيتخزنوا في الكاش
+    (مفتاح مبني على user_id — راجع export_status_cache_key فوق) بدل جلسة
+    الموظف زي قبل كده، لنفس سبب نقل نتيجة الاستيراد بالظبط (SESSION_ENGINE
+    الفعلي cached_db، وده كان بيخلي أي تحديث من هنا يوصل لقاعدة البيانات
+    ومتوصلش لنسخة الكاش اللي الفيوهات فعليًا بتقرا منها). view التحميل هي
+    اللي بتتأكد إن التوكن في الرابط مطابق للمخزّن في نتيجة الكاش قبل ما
+    تقدّم الملف.
     """
-    from staff.views.products.import_export import (
-        EXPORT_STATUS_SESSION_KEY,
-        EXPORT_TMP_DIR,
-    )
+    from staff.views.products.import_export import EXPORT_TMP_DIR
     from products.models import Product
     from products.services import import_export as import_export_service
-
-    session = SessionStore(session_key=session_key)
 
     try:
         products = Product.objects.select_related('category').prefetch_related(
@@ -292,6 +313,5 @@ def build_products_export(self, session_key, product_ids, filename, user_id):
     except Exception as e:
         status = {'state': 'error', 'message': f'خطأ غير متوقع أثناء بناء ملف التصدير: {str(e)}'}
 
-    session[EXPORT_STATUS_SESSION_KEY] = status
-    session.save()
+    cache.set(export_status_cache_key(user_id), status, EXPORT_STATUS_TTL)
     _notify_user(user_id, 'export_status', status['state'])

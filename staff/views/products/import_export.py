@@ -53,7 +53,8 @@ EXPORT_TMP_DIR = Path(settings.BASE_DIR) / 'tmp' / 'exports'
 # حالة بناء ملف التصدير في الخلفية — {'state': 'processing'|'done'|'error',
 # 'token': '...' (لو done — اسم الملف العشوائي في EXPORT_TMP_DIR)،
 # 'filename': '...' (لو done — اسم التحميل الأصلي)، 'message': '...' (لو error)}.
-EXPORT_STATUS_SESSION_KEY = 'product_export_status'
+# مخزّنة في الكاش (مفتاح مبني على user_id) بدل الجلسة — راجع
+# products/tasks.py — export_status_cache_key للسبب.
 
 # قبل كده كانت شاشة المراجعة بترندر كل صفوف "هيتحدّث"/"هيتضاف" (لحد آلاف
 # السطور مع ملف كبير) في قائمة واحدة من غير أي تقسيم — الحل: نفس Paginator
@@ -329,13 +330,13 @@ def export_products(request):
     جوه طلب HTTP، عشان مع نمو الكتالوج ميبقاش نفس عنق الزجاجة اللي كان
     في الاستيراد قبل النقل (راجع تقرير الديون التقنية، البند 2).
     """
-    if not request.session.session_key:
-        request.session.save()
-
-    request.session[EXPORT_STATUS_SESSION_KEY] = {'state': 'processing'}
-    from products.tasks import build_products_export
+    from products.tasks import build_products_export, export_status_cache_key
+    # نظّف أي نتيجة تصدير سابقة لنفس الموظف (لو كان عنده تصدير قديم لسه
+    # في الكاش) عشان شاشة الانتظار متتأكدش من نتيجة قديمة غلط — نفس
+    # أسلوب import_products بالظبط.
+    cache.delete(export_status_cache_key(request.user.pk))
     build_products_export.delay(
-        request.session.session_key, None, 'mgpharmacy_products_export.xlsx', request.user.pk,
+        None, 'mgpharmacy_products_export.xlsx', request.user.pk,
     )
     return redirect('staff:export_products_processing')
 
@@ -343,19 +344,23 @@ def export_products(request):
 @perm_required('products.view_product')
 def export_products_processing(request):
     """
-    شاشة انتظار بينما build_products_export شغالة في celery-worker — لسه
-    على نمط الجلسة + WebSocket + full page reload القديم (بعكس الاستيراد
-    اللي بقى بيستخدم كاش + fetch خفيف، راجع import_products_status
-    وproducts/tasks.py — parse_import_file للتفاصيل)، بتحوّل لتحميل
-    الملف الجاهز بدل شاشة مراجعة.
+    شاشة انتظار بينما build_products_export شغالة في celery-worker. الحالة
+    بتتقرا من الكاش (مفتاح مبني على user_id) بدل جلسة الموظف — راجع
+    products/tasks.py — export_status_cache_key للسبب (SESSION_ENGINE
+    الفعلي cached_db كان بيخلي أي تحديث من الـtask يوصل لقاعدة البيانات
+    ومتوصلش لنسخة الكاش اللي الفيو هنا فعليًا كانت بتقرا منها، فشاشة
+    الانتظار كانت بتفضل عالقة على 'processing' للأبد حتى لو الملف خلص).
+    نفس أسلوب import_products_status (fetch/poll خفيف) + WebSocket
+    للتحديث اللحظي لو الموظف فاتح التاب.
     """
-    status = request.session.get(EXPORT_STATUS_SESSION_KEY)
+    from products.tasks import export_status_cache_key
+    status = cache.get(export_status_cache_key(request.user.pk))
     if not status:
         return redirect('staff:product_list')
     if status.get('state') == 'done':
         return redirect('staff:export_products_download', token=status['token'])
     if status.get('state') == 'error':
-        del request.session[EXPORT_STATUS_SESSION_KEY]
+        cache.delete(export_status_cache_key(request.user.pk))
         messages.error(request, status.get('message', 'حصل خطأ أثناء بناء ملف التصدير.'))
         return redirect('staff:product_list')
     return render(request, 'staff/products/export_processing.html')
@@ -365,21 +370,23 @@ def export_products_processing(request):
 def export_products_download(request, token):
     """
     بتقدّم ملف التصدير الجاهز للتحميل. التوكن في الرابط لازم يطابق التوكن
-    المخزّن في جلسة الموظف نفسه (EXPORT_STATUS_SESSION_KEY) — حماية من
-    تخمين مسار ملف موظف تاني، حتى لو EXPORT_TMP_DIR أصلًا مش متاح عبر
-    nginx. بعد التقديم، بنمسح الملف من القرص ونشيل الحالة من الجلسة —
-    مفيش داعي يفضل محتفظ بيه بعد أول تحميل.
+    المخزّن في نتيجة الكاش الخاصة بنفس الموظف (export_status_cache_key) —
+    حماية من تخمين مسار ملف موظف تاني، حتى لو EXPORT_TMP_DIR أصلًا مش
+    متاح عبر nginx. بعد التقديم، بنمسح الملف من القرص ونشيل الحالة من
+    الكاش — مفيش داعي يفضل محتفظ بيه بعد أول تحميل.
     """
-    status = request.session.get(EXPORT_STATUS_SESSION_KEY)
+    from products.tasks import export_status_cache_key
+    cache_key = export_status_cache_key(request.user.pk)
+    status = cache.get(cache_key)
     if not status or status.get('state') != 'done' or status.get('token') != token:
         raise Http404
 
     path = EXPORT_TMP_DIR / f'{token}.xlsx'
     if not path.exists():
-        del request.session[EXPORT_STATUS_SESSION_KEY]
+        cache.delete(cache_key)
         raise Http404
 
-    del request.session[EXPORT_STATUS_SESSION_KEY]
+    cache.delete(cache_key)
     response = FileResponse(
         open(path, 'rb'), as_attachment=True, filename=status['filename'],
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -489,12 +496,9 @@ def export_products_selected(request):
         messages.warning(request, 'لازم تحدد صنف واحد على الأقل قبل التصدير.')
         return redirect('staff:export_products_select')
 
-    if not request.session.session_key:
-        request.session.save()
-
-    request.session[EXPORT_STATUS_SESSION_KEY] = {'state': 'processing'}
-    from products.tasks import build_products_export
+    from products.tasks import build_products_export, export_status_cache_key
+    cache.delete(export_status_cache_key(request.user.pk))
     build_products_export.delay(
-        request.session.session_key, ids, 'mgpharmacy_products_export_selected.xlsx', request.user.pk,
+        ids, 'mgpharmacy_products_export_selected.xlsx', request.user.pk,
     )
     return redirect('staff:export_products_processing')
