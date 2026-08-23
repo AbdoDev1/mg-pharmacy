@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from django.core.paginator import Paginator
+from django.core.paginator import Page, Paginator
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import CharField, F, IntegerField, Q, Value
 from accounts.models import Employee
 from activity.models import ActivityLog
 from activity.services import diff_summary
@@ -195,34 +195,70 @@ def _movements_tab_context(request):
     start, end, period = resolve_period(request)
     employee_id = request.GET.get('employee', '').strip()
 
-    rows = []
-
-    # لو الفلتر محدد نوع حركة رصيد فعلي (IN/OUT/..)، أو مفيش فلتر خالص
-    # (كل الأنواع)، نجيب StockMovement. لو الفلتر "تغيير سعر" بالظبط،
-    # نتجاهل StockMovement تمامًا (مفيش داعي نستعلم عليه أصلًا).
+    # نبني index صغير موحّد من المصدرين ونرتبه ونقسّمه في قاعدة البيانات.
+    # الصفوف الفعلية (مع select_related) بتتجاب بعد كده للصفحة الحالية بس؛
+    # ده يمنع تحميل كل سجل الحركات في Python قبل تطبيق الـ pagination.
+    movement_indexes = None
     if movement_type != PRICE_CHANGE_KIND:
-        movements_qs = StockMovement.objects.select_related(
-            'inventory__product', 'unit', 'created_by'
-        ).order_by('-created_at')
-        movements_qs = _filtered_by_common(movements_qs, search_q, start, end, employee_id)
+        movements_qs = _filtered_by_common(
+            StockMovement.objects.all().order_by(), search_q, start, end, employee_id,
+        )
         if movement_type:
             movements_qs = movements_qs.filter(movement_type=movement_type)
-        rows.extend(_stock_movement_to_row(m) for m in movements_qs)
+        movement_indexes = movements_qs.annotate(
+            kind=Value('movement', output_field=CharField()),
+            source_id=F('pk'),
+            source_rank=Value(0, output_field=IntegerField()),
+        ).values('kind', 'source_id', 'source_rank', 'created_at')
 
-    # لو الفلتر محدد "تغيير سعر" بالظبط، أو مفيش فلتر خالص، نجيب PriceChange.
+    price_indexes = None
     if not movement_type or movement_type == PRICE_CHANGE_KIND:
-        price_changes_qs = PriceChange.objects.select_related(
-            'inventory__product', 'unit', 'created_by'
-        ).order_by('-created_at')
-        price_changes_qs = _filtered_by_common(price_changes_qs, search_q, start, end, employee_id)
-        rows.extend(_price_change_to_row(c) for c in price_changes_qs)
+        price_changes_qs = _filtered_by_common(
+            PriceChange.objects.all().order_by(), search_q, start, end, employee_id,
+        )
+        price_indexes = price_changes_qs.annotate(
+            kind=Value('price_change', output_field=CharField()),
+            source_id=F('pk'),
+            source_rank=Value(1, output_field=IntegerField()),
+        ).values('kind', 'source_id', 'source_rank', 'created_at')
 
-    # الاتنين اتجابوا مرتبين لوحدهم (كل واحد بترتيب -created_at خاص بيه)،
-    # فبعد الدمج لازم نرتب تاني عشان يفضلوا متداخلين صح مع بعض بالتاريخ.
-    rows.sort(key=lambda r: r.created_at, reverse=True)
+    if movement_indexes is None:
+        movement_indexes = price_indexes.none()
+    if price_indexes is None:
+        price_indexes = movement_indexes.none()
+    movement_indexes = movement_indexes.union(price_indexes, all=True).order_by(
+        '-created_at', 'source_rank', '-source_id',
+    )
 
-    paginator = Paginator(rows, STAFF_LIST_PAGE_SIZE)
-    page_obj = paginator.get_page(request.GET.get('page'))
+    paginator = Paginator(movement_indexes, STAFF_LIST_PAGE_SIZE)
+    index_page = paginator.get_page(request.GET.get('page'))
+    movement_ids = [
+        index['source_id'] for index in index_page.object_list
+        if index['kind'] == 'movement'
+    ]
+    price_change_ids = [
+        index['source_id'] for index in index_page.object_list
+        if index['kind'] == 'price_change'
+    ]
+    movements_by_id = {
+        movement.pk: movement
+        for movement in StockMovement.objects.select_related(
+            'inventory__product', 'unit', 'created_by',
+        ).filter(pk__in=movement_ids)
+    }
+    price_changes_by_id = {
+        change.pk: change
+        for change in PriceChange.objects.select_related(
+            'inventory__product', 'unit', 'created_by',
+        ).filter(pk__in=price_change_ids)
+    }
+    rows = []
+    for index in index_page.object_list:
+        if index['kind'] == 'movement':
+            rows.append(_stock_movement_to_row(movements_by_id[index['source_id']]))
+        else:
+            rows.append(_price_change_to_row(price_changes_by_id[index['source_id']]))
+    page_obj = Page(rows, index_page.number, paginator)
 
     return {
         'movements': page_obj,

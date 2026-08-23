@@ -1,91 +1,95 @@
-"""
-اختبار ضغط لموقع MG Pharmacy باستخدام Locust.
+"""Focused authenticated baseline workloads for the local Docker benchmark.
 
-التشغيل (بعد ما الموقع يشتغل محليًا عبر docker-compose على المنفذ 8081):
-    pip install locust
-    locust -f locustfile.py --host=http://localhost:8081
+Run one tagged workload at a time, for example:
+    locust -f locustfile.py --headless --host=http://127.0.0.1:8081 \
+      --tags inventory -u 1 -r 1 -t 30s --csv=/tmp/inventory
 
-بعدها افتح المتصفح على http://localhost:8089 وحدد:
-    - عدد المستخدمين (Number of users) — مثلاً ابدأ بـ 20 وزوّد تدريجيًا
-    - معدل الزيادة (Spawn rate) — مثلاً 5 مستخدمين/ثانية
-
-راقب: Requests/sec, Response time (p95), Failure rate.
-لو الـ p95 بدأ ياخد أكتر من ثانية أو الأخطاء بدأت تظهر، يبقى وصلت لحد سعة
-السيرفر بالمواصفات دي.
+Credentials default to the disposable benchmark fixture and can be overridden
+with BENCHMARK_STAFF_USERNAME/PASSWORD and BENCHMARK_CLIENT_USERNAME/PASSWORD.
 """
 
-import random
+import os
 import re
-from locust import HttpUser, task, between
 
-# ملحوظة CSRF: Django بيستخدم "masked" CSRF tokens — يعني القيمة اللي بتتخزن
-# في كوكي csrftoken (32 حرف) مختلفة عن القيمة اللي بتتعرض في حقل الفورم
-# csrfmiddlewaretoken (64 حرف، معمول لها XOR بقناع عشوائي كل مرة). عشان كده
-# لازم ناخد القيمة من جسم صفحة اللوجن (HTML) مش من الكوكي.
+from locust import HttpUser, between, tag, task
+
+
 CSRF_TOKEN_RE = re.compile(r'name="csrfmiddlewaretoken" value="([^"]+)"')
 
 
 def get_csrf_token(response):
-    """يستخرج csrfmiddlewaretoken من جسم صفحة الفورم (HTML)."""
+    """Extract Django's masked CSRF value from an HTML form response."""
     match = CSRF_TOKEN_RE.search(response.text)
     if not match:
-        raise ValueError("csrfmiddlewaretoken مش موجود في صفحة الفورم")
+        raise ValueError("csrfmiddlewaretoken was not found in the form response")
     return match.group(1)
 
 
-class GuestBrowsing(HttpUser):
-    """زائر بيتصفح المتجر من غير تسجيل دخول — أكتر سيناريو هيحصل كتير."""
-    weight = 3
-    wait_time = between(1, 3)
+class _AuthenticatedUser(HttpUser):
+    """Shared real HTTP form-login flow for the benchmark users."""
 
-    @task(3)
-    def browse_home(self):
-        self.client.get("/", name="/ (الرئيسية)")
+    abstract = True
+    wait_time = between(0.2, 0.2)
 
-    @task(2)
-    def browse_store(self):
-        self.client.get("/store/", name="/store/")
-
-    @task(1)
-    def view_product(self):
-        # عدّل نطاق الـ IDs دي حسب عدد المنتجات الفعلي عندك في قاعدة الاختبار
-        pk = random.randint(1, 20)
-        self.client.get(f"/store/product/{pk}/", name="/store/product/[pk]/")
-
-    @task(1)
-    def view_login_page(self):
-        self.client.get("/accounts/login/", name="/accounts/login/")
-
-
-class LoggedInClient(HttpUser):
-    """عميل مسجّل دخول بيتصفح ويضيف للسلة — سيناريو أتقل على قاعدة البيانات."""
-    weight = 1
-    wait_time = between(2, 5)
-
-    def on_start(self):
-        # عدّل بيانات الدخول دي لحساب عميل تجريبي حقيقي موجود في قاعدة اختبارك
-        login_page = self.client.get("/accounts/login/", name="/accounts/login/ (GET)")
-        csrf_token = get_csrf_token(login_page)
-        self.client.post(
-            "/accounts/login/",
+    def _login(self, path, username, password, request_name):
+        page = self.client.get(path, name=f"{request_name} login GET")
+        csrf_token = get_csrf_token(page)
+        response = self.client.post(
+            path,
             {
-                "username": "test_client",
-                "password": "test_password_123",
+                "username": username,
+                "password": password,
                 "csrfmiddlewaretoken": csrf_token,
             },
-            headers={"Referer": self.client.base_url + "/accounts/login/"},
-            name="/accounts/login/ (POST)",
+            headers={"Referer": self.client.base_url + path},
+            allow_redirects=False,
+            name=f"{request_name} login POST",
+        )
+        if response.status_code not in (301, 302, 303, 307, 308):
+            response.failure(f"login returned HTTP {response.status_code}")
+
+
+class StaffBenchmarkUser(_AuthenticatedUser):
+    """Authenticated staff requests for inventory and all-time report baselines."""
+
+    weight = 1
+
+    def on_start(self):
+        self._login(
+            "/staff/login/",
+            os.getenv("BENCHMARK_STAFF_USERNAME", "benchmark_staff"),
+            os.getenv("BENCHMARK_STAFF_PASSWORD", "BenchmarkPass!2026"),
+            "staff",
         )
 
-    @task(2)
-    def browse_store(self):
-        self.client.get("/store/", name="/store/ (عميل)")
+    @tag("inventory")
+    @task
+    def inventory_movements(self):
+        self.client.get("/staff/inventory/?tab=movements", name="/staff/inventory/?tab=movements")
 
-    @task(1)
-    def view_cart(self):
-        self.client.get("/cart/", name="/cart/")
+    @tag("report")
+    @task
+    def products_sold_all_time(self):
+        self.client.get(
+            "/staff/reports/products/?period=all",
+            name="/staff/reports/products/?period=all",
+        )
 
-    @task(1)
-    def view_orders(self):
-        self.client.get("/orders/", name="/orders/")
 
+class ClientStoreBenchmarkUser(_AuthenticatedUser):
+    """Authenticated client requests for the normal store catalog page."""
+
+    weight = 1
+
+    def on_start(self):
+        self._login(
+            "/accounts/login/",
+            os.getenv("BENCHMARK_CLIENT_USERNAME", "benchmark_client_0001"),
+            os.getenv("BENCHMARK_CLIENT_PASSWORD", "BenchmarkPass!2026"),
+            "client",
+        )
+
+    @tag("store")
+    @task
+    def authenticated_store(self):
+        self.client.get("/store/", name="/store/ authenticated")

@@ -33,6 +33,22 @@ def import_result_cache_key(user_id):
     return f'{IMPORT_RESULT_CACHE_PREFIX}{user_id}'
 
 
+# دفعة الاستيراد وقت شاشة المراجعة (import_products_review) — بعد ما
+# parse_import_file تخلص، الدفعة كانت بتتنقل لجلسة الموظف (request.session)
+# وتقعد هناك طول ما هو بيتصفح صفحات المراجعة (update_page/create_page)،
+# رغم إنها ممكن توصل لآلاف الصفوف (لحد 3000). بما إن SESSION_ENGINE
+# الفعلي cached_db، ده كان معناه تحميل/حفظ الدفعة كاملة من Redis في كل
+# طلب تنقل صفحات أثناء المراجعة، مش بس لما يوصلها أول مرة. هنا بدل كده:
+# مفتاح كاش مخصص، بيتجدد (TTL) في كل مرة الموظف يفتح شاشة المراجعة، عشان
+# مراجعة طويلة نسبيًا متنتهيش صلاحيتها لوحدها من نص الطريق.
+IMPORT_REVIEW_BATCH_PREFIX = 'product_import_review_batch:'
+IMPORT_REVIEW_BATCH_TTL = 60 * 30  # 30 دقيقة، بتتجدد مع كل فتح للمراجعة
+
+
+def import_review_batch_cache_key(user_id):
+    return f'{IMPORT_REVIEW_BATCH_PREFIX}{user_id}'
+
+
 # نفس فكرة IMPORT_RESULT_CACHE_PREFIX فوق، بس لمرحلة التأكيد/الحفظ
 # (import_products_confirm) بدل مرحلة القراءة. الحفظ الفعلي (commit_import_batch)
 # كان بيتنفذ متزامن جوه request/response cycle العادي في web-staff — أخطر

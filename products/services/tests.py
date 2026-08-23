@@ -2,7 +2,8 @@ from decimal import Decimal
 
 from django.test import TestCase
 
-from products.models import Category, Product
+from accounts.models import AccountType
+from products.models import Category, Product, ProductUnit, UnitDiscount
 from products.services import import_export as svc
 
 
@@ -276,3 +277,28 @@ class CommitImportBatchTestCase(TestCase):
 
         new_product = Product.objects.get(name_ar='صنف جديد كليًا')
         self.assertEqual(new_product.inventory.quantity, 8)
+
+    def test_blank_discount_deletes_existing_but_not_absent_pair(self):
+        account_type = AccountType.objects.create(name='اختبار')
+        with_discount = Product.objects.create(category=self.category, name_ar='خصم موجود')
+        without_discount = Product.objects.create(category=self.category, name_ar='خصم غير موجود')
+        existing_unit = ProductUnit.objects.create(
+            product=with_discount, size='S', name='قطعة', qty_in_small=1, unit_price=10,
+        )
+        absent_unit = ProductUnit.objects.create(
+            product=without_discount, size='S', name='قطعة', qty_in_small=1, unit_price=10,
+        )
+        UnitDiscount.objects.create(unit=existing_unit, account_type=account_type, discount_percent=5)
+
+        def row(row_num, product):
+            return {
+                'row_num': row_num, 'action': 'update', 'match_pk': product.pk,
+                'category_slug': '', 'name_ar': product.name_ar,
+                'small': {'unit_name': 'قطعة', 'unit_price': 10, 'qty_in_small': 1, 'quantity': 0},
+                'large': None, 'discounts': {account_type.pk: None},
+            }
+
+        svc.commit_import_batch([row(2, with_discount), row(3, without_discount)], {}, user=None)
+
+        self.assertFalse(UnitDiscount.objects.filter(unit=existing_unit, account_type=account_type).exists())
+        self.assertFalse(UnitDiscount.objects.filter(unit=absent_unit, account_type=account_type).exists())

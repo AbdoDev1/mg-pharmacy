@@ -28,6 +28,7 @@ cd "$PROJECT_DIR"
     echo "$(date '+%Y-%m-%d %H:%M:%S') | == daily maintenance started =="
     docker compose exec -T web-store python manage.py trim_activity_logs
     docker compose exec -T web-store python manage.py trim_notifications
+    docker compose exec -T web-store python manage.py cleanup_export_files
     echo "$(date '+%Y-%m-%d %H:%M:%S') | == daily maintenance finished =="
 } >> "$LOG_FILE" 2>&1
 

@@ -6,8 +6,6 @@
 """
 from decimal import Decimal
 
-from django.db.models import Q
-
 from accounts.models import AccountType
 from activity.models import ActivityLog
 from activity.services import log_activity
@@ -22,10 +20,13 @@ __all__ = [
     'commit_import_batch',
 ]
 
+UNIT_DISCOUNT_DELETE_CHUNK_SIZE = 500
+
 
 def commit_product(row_data, target_pk, user, account_types_by_pk, category_cache=None,
                     product_cache=None, inventory_cache=None,
-                    discount_upserts=None, discount_delete_pairs=None):
+                    discount_upserts=None, discount_delete_pairs=None,
+                    existing_discount_pks=None):
     """
     بيطبّق صنف واحد (وحدة أو وحدتين + خصوماته) فعليًا على قاعدة البيانات،
     بعد ما يبقى معروف بالظبط (من مرحلة المراجعة) هل ده تحديث لمنتج
@@ -152,8 +153,10 @@ def commit_product(row_data, target_pk, user, account_types_by_pk, category_cach
             if not account_type:
                 continue
             if pct_raw is None:
+                discount_key = (discount_unit.pk, account_type.pk)
                 if discount_delete_pairs is not None:
-                    discount_delete_pairs.append((discount_unit.pk, account_type.pk))
+                    if existing_discount_pks is None or discount_key in existing_discount_pks:
+                        discount_delete_pairs.append(discount_key)
                 else:
                     UnitDiscount.objects.filter(unit=discount_unit, account_type=account_type).delete()
             else:
@@ -215,6 +218,13 @@ def commit_import_batch(rows, decisions, user):
         inv.product_id: inv
         for inv in Inventory.objects.filter(product_id__in=target_pks)
     }
+    existing_discount_pks = {
+        (unit_id, account_type_id): pk
+        for unit_id, account_type_id, pk in UnitDiscount.objects.filter(
+            unit__product_id__in=target_pks,
+            unit__size__in=('S', 'L'),
+        ).values_list('unit_id', 'account_type_id', 'pk')
+    }
 
     # مُشتركتان بين كل صفوف الدفعة — راجع تعليق discount_upserts/
     # discount_delete_pairs في commit_product لتفاصيل الـ batching.
@@ -233,6 +243,7 @@ def commit_import_batch(rows, decisions, user):
             category_cache=category_cache,
             product_cache=product_cache, inventory_cache=inventory_cache,
             discount_upserts=discount_upserts, discount_delete_pairs=discount_delete_pairs,
+            existing_discount_pks=existing_discount_pks,
         )
         if created:
             created_count += 1
@@ -270,12 +281,12 @@ def commit_import_batch(rows, decisions, user):
             unique_fields=['unit', 'account_type'],
             update_fields=['discount_percent'],
         )
-    # حذف كل أزواج (unit, account_type) اللي اتحددت كـ "امسح الخصم ده"
-    # في استعلام واحد، بدل .filter().delete() منفصل لكل زوج.
-    if delete_keys:
-        delete_q = Q()
-        for unit_pk, account_type_pk in delete_keys:
-            delete_q |= Q(unit_id=unit_pk, account_type_id=account_type_pk)
-        UnitDiscount.objects.filter(delete_q).delete()
+    # الحذف بالـPK وبقطع ثابتة عشان حتى دفعة فيها عشرات الآلاف من الحذف
+    # الحقيقي ما تبنيش DELETE واحدة غير محدودة الحجم.
+    delete_pks = [existing_discount_pks[key] for key in delete_keys if key in existing_discount_pks]
+    for offset in range(0, len(delete_pks), UNIT_DISCOUNT_DELETE_CHUNK_SIZE):
+        UnitDiscount.objects.filter(
+            pk__in=delete_pks[offset:offset + UNIT_DISCOUNT_DELETE_CHUNK_SIZE],
+        ).delete()
 
     return created_count, updated_count, restocked_count

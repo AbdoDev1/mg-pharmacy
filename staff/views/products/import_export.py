@@ -25,7 +25,6 @@ from products.services import import_export as import_export_service
 from staff.permissions import perm_required
 from staff.excel_utils import workbook_response
 
-IMPORT_SESSION_KEY = 'product_import_batch'
 IMPORT_ERRORS_SESSION_KEY = 'product_import_last_errors'
 # ملحوظة: نتيجة معالجة الاستيراد بالخلفية (Celery) بقت متخزنة في الكاش
 # (Redis) بمفتاح مبني على user_id — راجع products/tasks.py
@@ -145,17 +144,22 @@ def import_products_review(request):
     وبتوقف عند أي صف اسمه قريب من صنف موجود وتسأل الموظف صراحةً هل ده
     نفس الصنف (تحديث) ولا صنف جديد فعلًا — قبل أي حفظ في قاعدة البيانات.
     """
-    batch = request.session.get(IMPORT_SESSION_KEY)
+    from products.tasks import (
+        import_result_cache_key,
+        import_review_batch_cache_key,
+        IMPORT_REVIEW_BATCH_TTL,
+    )
+    review_key = import_review_batch_cache_key(request.user.pk)
+    batch = cache.get(review_key)
     if not batch:
         # أول ما يوصل هنا (من رابط الإشعار أو تحويلة شاشة الانتظار)،
-        # النتيجة لسه في الكاش (Celery حطها هناك، مش في السيشن — راجع
-        # products/tasks.py). ننقلها للسيشن مرة واحدة عشان باقي شاشات
-        # الاستيراد (التأكيد، الأخطاء) تفضل شغالة زي ما هي بالظبط.
-        from products.tasks import import_result_cache_key
+        # النتيجة لسه في كاش النتيجة الخام (Celery حطها هناك — راجع
+        # products/tasks.py). ننقلها لمفتاح كاش المراجعة مرة واحدة عشان
+        # باقي شاشات الاستيراد (التأكيد، الأخطاء) تفضل شغالة زي ما هي
+        # بالظبط.
         cached = cache.get(import_result_cache_key(request.user.pk))
         if cached and cached.get('status') == 'done' and not cached.get('error_message'):
             batch = {'rows': cached['rows'], 'errors': cached['errors']}
-            request.session[IMPORT_SESSION_KEY] = batch
             cache.delete(import_result_cache_key(request.user.pk))
         elif cached:
             messages.error(request, cached.get('error_message') or 'حصل خطأ أثناء قراءة الملف.')
@@ -165,6 +169,11 @@ def import_products_review(request):
     if not batch:
         messages.error(request, 'مفيش عملية استيراد جارية. من فضلك ارفع الملف تاني.')
         return redirect('staff:import_products')
+
+    # تجديد الصلاحية في كل مرة الشاشة دي بتترندر (أول وصول أو أي تنقل
+    # صفحات لاحق) — عشان مراجعة طويلة (كتالوج كبير، موظف بياخد وقته)
+    # متنتهيش صلاحيتها لوحدها من نص الطريق.
+    cache.set(review_key, batch, timeout=IMPORT_REVIEW_BATCH_TTL)
 
     rows = batch['rows']
     all_update_rows = [r for r in rows if r['action'] == 'update']
@@ -209,11 +218,17 @@ def import_products_confirm(request):
     nginx/gunicorn لو الملف كبير كفاية. نفس السبب اللي خلّى مرحلة القراءة
     (parse_import_file) تتنقل لـCelery قبل كده — دلوقتي مرحلة التأكيد
     بتتبع نفس النمط بالظبط.
+
+    الدفعة بتتقرا من نفس مفتاح كاش المراجعة (import_review_batch_cache_key)
+    بدل الجلسة — راجع products/tasks.py لسبب النقل (تقليل حجم كل طلب
+    أثناء التنقل بين صفحات المراجعة، خصوصًا مع دفعة كبيرة لحد 3000 صف).
     """
     if request.method != 'POST':
         return redirect('staff:import_products')
 
-    batch = request.session.get(IMPORT_SESSION_KEY)
+    from products.tasks import import_review_batch_cache_key
+    review_key = import_review_batch_cache_key(request.user.pk)
+    batch = cache.get(review_key)
     if not batch:
         messages.error(request, 'انتهت صلاحية عملية الاستيراد دي. من فضلك ارفع الملف تاني.')
         return redirect('staff:import_products')
@@ -240,7 +255,7 @@ def import_products_confirm(request):
         'notify_clients': request.POST.get('notify_clients') == 'on',
     }
     cache.set(import_commit_payload_cache_key(request.user.pk), payload, timeout=60 * 30)
-    del request.session[IMPORT_SESSION_KEY]
+    cache.delete(review_key)
     commit_import_batch_task.delay(request.user.pk)
 
     return render(request, 'staff/products/import_committing.html')
@@ -330,11 +345,20 @@ def export_products(request):
     جوه طلب HTTP، عشان مع نمو الكتالوج ميبقاش نفس عنق الزجاجة اللي كان
     في الاستيراد قبل النقل (راجع تقرير الديون التقنية، البند 2).
     """
-    from products.tasks import build_products_export, export_status_cache_key
+    from products.tasks import (
+        EXPORT_STATUS_TTL,
+        build_products_export,
+        export_status_cache_key,
+    )
     # نظّف أي نتيجة تصدير سابقة لنفس الموظف (لو كان عنده تصدير قديم لسه
     # في الكاش) عشان شاشة الانتظار متتأكدش من نتيجة قديمة غلط — نفس
     # أسلوب import_products بالظبط.
     cache.delete(export_status_cache_key(request.user.pk))
+    cache.set(
+        export_status_cache_key(request.user.pk),
+        {'state': 'processing'},
+        timeout=EXPORT_STATUS_TTL,
+    )
     build_products_export.delay(
         None, 'mgpharmacy_products_export.xlsx', request.user.pk,
     )
@@ -496,8 +520,17 @@ def export_products_selected(request):
         messages.warning(request, 'لازم تحدد صنف واحد على الأقل قبل التصدير.')
         return redirect('staff:export_products_select')
 
-    from products.tasks import build_products_export, export_status_cache_key
+    from products.tasks import (
+        EXPORT_STATUS_TTL,
+        build_products_export,
+        export_status_cache_key,
+    )
     cache.delete(export_status_cache_key(request.user.pk))
+    cache.set(
+        export_status_cache_key(request.user.pk),
+        {'state': 'processing'},
+        timeout=EXPORT_STATUS_TTL,
+    )
     build_products_export.delay(
         ids, 'mgpharmacy_products_export_selected.xlsx', request.user.pk,
     )

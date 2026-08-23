@@ -48,7 +48,8 @@ class ExportProductsFlowTestCase(TestCase):
         self.http.force_login(make_admin())
 
         start_response = self.http.get(reverse('staff:export_products'))
-        self.assertRedirects(start_response, reverse('staff:export_products_processing'))
+        self.assertEqual(start_response.status_code, 302)
+        self.assertEqual(start_response.url, reverse('staff:export_products_processing'))
 
         # مع CELERY_TASK_ALWAYS_EAGER، الـ task خلصت خلال .delay() نفسها،
         # فالحالة في الجلسة المفروض تبقى 'done' فورًا.
@@ -100,7 +101,8 @@ class ExportProductsSelectedTestCase(TestCase):
         start_response = self.http.post(
             reverse('staff:export_products_selected'), {'product_ids': [self.product1.pk]},
         )
-        self.assertRedirects(start_response, reverse('staff:export_products_processing'))
+        self.assertEqual(start_response.status_code, 302)
+        self.assertEqual(start_response.url, reverse('staff:export_products_processing'))
 
         processing_response = self.http.get(reverse('staff:export_products_processing'))
         download_response = self.http.get(processing_response.url)

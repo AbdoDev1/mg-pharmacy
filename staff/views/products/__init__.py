@@ -41,7 +41,6 @@ from .relations import (
 )
 
 from .import_export import (
-    IMPORT_SESSION_KEY,
     IMPORT_ERRORS_SESSION_KEY,
     IMPORT_MAX_FILE_SIZE_MB,
     IMPORT_MAX_ROWS,
@@ -85,7 +84,6 @@ __all__ = [
     'category_add',
     'category_edit',
     'category_delete',
-    'IMPORT_SESSION_KEY',
     'IMPORT_ERRORS_SESSION_KEY',
     'IMPORT_MAX_FILE_SIZE_MB',
     'IMPORT_MAX_ROWS',
