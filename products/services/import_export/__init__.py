@@ -18,6 +18,7 @@ from .commit import commit_import_batch, commit_product
 from .common import (
     DISCOUNT_COL_PREFIX,
     FUZZY_MATCH_THRESHOLD,
+    FUZZY_MATCH_THRESHOLD_TRIGRAM,
     REQUIRED_IMPORT_HEADERS,
     discount_col_name,
     get_or_create_category,
@@ -28,6 +29,7 @@ from .parsing import classify_row, group_unit_rows, parse_unit_row, read_import_
 
 __all__ = [
     'FUZZY_MATCH_THRESHOLD',
+    'FUZZY_MATCH_THRESHOLD_TRIGRAM',
     'DISCOUNT_COL_PREFIX',
     'REQUIRED_IMPORT_HEADERS',
     'discount_col_name',

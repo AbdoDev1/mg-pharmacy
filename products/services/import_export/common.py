@@ -7,6 +7,20 @@
 from django.utils.text import slugify
 
 FUZZY_MATCH_THRESHOLD = 0.82  # 82% تشابه فأكثر = "محتاج مراجعة بشرية"
+# ملحوظة: القيمة دي بقت غير مستخدمة داخليًا في classify_row بعد التحويل
+# لـfind_similar_products_db (trigram) — متسيبة هنا بس للـbackward-compat
+# (بعض الكود القديم بيستوردها من هنا مباشرة، راجع
+# staff/views/products/import_export.py).
+
+# threshold مقياس trigram similarity (pg_trgm) لـfind_similar_products_db —
+# مقياس مختلف جوهريًا عن FUZZY_MATCH_THRESHOLD القديم (SequenceMatcher)،
+# فمينفعش نستخدم نفس رقم الـ0.82. القيمة دي *مبدئية* (منتصف مدى
+# CANDIDATE_THRESHOLDS المُختبَر في السكريبت، ونفس القيمة الافتراضية
+# لـpg_trgm.similarity_threshold في Postgres نفسه) — لازم تُراجَع فعليًا
+# بتشغيل scripts/tests/calibrate_trigram_threshold.py على عيّنة موسّعة من
+# أسماء كتالوج الإنتاج الحقيقي قبل الاعتماد النهائي، زي ما السكريبت نفسه
+# بيوصي في تعليقه.
+FUZZY_MATCH_THRESHOLD_TRIGRAM = 0.30
 
 # عمود الخصم لكل نوع حساب (فئة) بيتسمى discount:<اسم نوع الحساب> — الأنواع
 # نفسها ديناميكية (بتتضاف/تتحذف من شاشة "أنواع الحسابات")، فمفيش عدد أعمدة

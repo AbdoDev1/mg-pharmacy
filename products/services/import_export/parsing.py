@@ -4,7 +4,10 @@
 كل الدوال هنا "نقية" قدر الإمكان: بتاخد بيانات وترجع بيانات، من غير ما
 تعرف حاجة عن HTTP request أو response أو session. ده اللي بيخليها سهلة
 الاختبار (products/services/tests.py) من غير ما نحتاج نمرّ بـ Django
-test client أو نرفع ملف Excel فعلي لكل اختبار.
+test client أو نرفع ملف Excel فعلي لكل اختبار. استثناء واحد: classify_row
+بقت محتاجة اتصال DB فعلي (استعلام trigram similarity لخطوة التشابه) —
+لسه سهلة الاختبار عادي بـTestCase (transaction test DB)، بس مش "نقية"
+100% بالمعنى الصارم بعد كده.
 
 الترتيب: read_import_workbook بتقرا الملف صفًا صفًا (parse_unit_row)،
 بتلمّ صفوف نفس الصنف مع بعض (group_unit_rows)، وبعدين بتحدد لكل صنف
@@ -16,11 +19,11 @@ from decimal import Decimal, InvalidOperation
 import openpyxl
 
 from accounts.models import AccountType
-from products.matching import normalize_name, find_similar_products
+from products.matching import find_similar_products_db, normalize_name
 from products.models import Product
 from studio.models import StudioImage
 
-from .common import FUZZY_MATCH_THRESHOLD, REQUIRED_IMPORT_HEADERS, discount_col_name
+from .common import FUZZY_MATCH_THRESHOLD_TRIGRAM, REQUIRED_IMPORT_HEADERS, discount_col_name
 
 __all__ = [
     'parse_unit_row',
@@ -170,13 +173,19 @@ def group_unit_rows(unit_rows):
     return products_data, errors
 
 
-def classify_row(row_data, existing_by_code, existing_by_name_key, all_products):
+def classify_row(row_data, existing_by_code, existing_by_name_key):
     """
     بيحدد إيه اللي المفروض يحصل للصف ده اعتمادًا على مطابقة الكود (لو
     موجود) ثم الاسم المُطبَّع (بعد إزالة فروق المسافات/الأرقام/الحروف
     الشكلية) ثم أقرب الأسماء تشابهًا لو مفيش تطابق تام. النتيجة action
     واحدة من: update (تحديث صنف معروف بثقة) أو review (يحتاج قرار بشري)
     أو create (صنف جديد فعلًا، مفيش أي شبه بحاجة موجودة).
+
+    خطوة التشابه (لو مفيش تطابق تام) بتستعلم قاعدة البيانات مباشرة
+    (find_similar_products_db، trigram similarity) بدل ما تاخد كتالوج
+    كامل كباراميتر وتقارن في Python — عشان كده الدالة بقت محتاجة اتصال
+    DB فعلي وقت الاستدعاء (فرق عن التصميم القديم اللي كان "نقي" بالكامل،
+    راجع docstring أول الملف).
     """
     name_key = normalize_name(row_data['name_ar'])
     row_data['name_key'] = name_key
@@ -191,7 +200,7 @@ def classify_row(row_data, existing_by_code, existing_by_name_key, all_products)
         return {**row_data, 'action': 'update', 'match_pk': product.pk,
                 'match_name': product.name_ar, 'match_reason': 'name'}
 
-    candidates = find_similar_products(name_key, all_products, threshold=FUZZY_MATCH_THRESHOLD)
+    candidates = find_similar_products_db(name_key, threshold=FUZZY_MATCH_THRESHOLD_TRIGRAM)
     if candidates:
         return {**row_data, 'action': 'review', 'match_pk': None,
                 'candidates': [{'pk': p.pk, 'name': p.name_ar, 'code': p.code, 'score': s}
@@ -292,7 +301,7 @@ def read_import_workbook(excel_file, max_rows):
             p['studio_image_id'] = image_id
 
     rows = [
-        classify_row(p, existing_by_code, existing_by_name_key, all_products)
+        classify_row(p, existing_by_code, existing_by_name_key)
         for p in products_data
     ]
 

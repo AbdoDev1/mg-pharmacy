@@ -119,7 +119,7 @@ class ClassifyRowTestCase(TestCase):
         self.product.save()
         row = self._row_data('اسم مختلف تمامًا', code='BZ-001')
         result = svc.classify_row(
-            row, {'BZ-001': self.product}, {}, [self.product],
+            row, {'BZ-001': self.product}, {},
         )
         self.assertEqual(result['action'], 'update')
         self.assertEqual(result['match_pk'], self.product.pk)
@@ -127,19 +127,19 @@ class ClassifyRowTestCase(TestCase):
     def test_matching_normalized_name_classified_as_update(self):
         row = self._row_data('شاش طبي معقم')
         result = svc.classify_row(
-            row, {}, {self.product.name_key: self.product}, [self.product],
+            row, {}, {self.product.name_key: self.product},
         )
         self.assertEqual(result['action'], 'update')
         self.assertEqual(result['match_reason'], 'name')
 
     def test_completely_new_name_classified_as_create(self):
         row = self._row_data('صنف جديد تمامًا غير موجود')
-        result = svc.classify_row(row, {}, {}, [self.product])
+        result = svc.classify_row(row, {}, {})
         self.assertEqual(result['action'], 'create')
 
     def test_similar_but_not_identical_name_needs_review(self):
         row = self._row_data('شاش طبي معقم رقم 2')  # قريب لكن مش مطابق
-        result = svc.classify_row(row, {}, {}, [self.product])
+        result = svc.classify_row(row, {}, {})
         self.assertIn(result['action'], ('review', 'create'))
 
 
