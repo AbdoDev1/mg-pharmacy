@@ -35,14 +35,18 @@
                     {% endfor %}
                 </select>
             </div>
-            <div>
+            <div x-data="{ productQuery: '{{ selected_product_name|escapejs }}', productId: '{{ selected_product }}' }" class="relative">
                 <label for="stg_product" class="text-xs font-medium text-gray-500 mb-1 block">المنتج</label>
-                <select name="product" id="stg_product" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-400">
-                    <option value="">كل المنتجات</option>
-                    {% for p in products %}
-                    <option value="{{ p.id }}" {% if selected_product == p.id|stringformat:'s' %}selected{% endif %}>{{ p.display_name }}</option>
-                    {% endfor %}
-                </select>
+                <input type="text" id="stg_product" name="q" x-model="productQuery" autocomplete="off"
+                       placeholder="ابحث عن منتج..."
+                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-400"
+                       hx-get="{% url 'staff:reports_product_search' %}"
+                       hx-trigger="keyup changed delay:300ms, focus"
+                       hx-target="#stg-product-filter-results" hx-include="this">
+                <input type="hidden" name="product" x-model="productId">
+                <button type="button" x-show="productId" x-cloak @click="productId = ''; productQuery = ''; document.getElementById('stg-product-filter-results').innerHTML = '';"
+                        class="absolute left-2 bottom-2 text-gray-400 hover:text-red-500" aria-label="مسح المنتج">×</button>
+                <div id="stg-product-filter-results" class="absolute z-10 w-full"></div>
             </div>
         </div>
         <div class="flex flex-wrap gap-2 mt-4">

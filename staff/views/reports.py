@@ -1,19 +1,52 @@
 from decimal import Decimal
 
 from django.core.paginator import Paginator
-from django.db.models import F, Sum, Subquery, OuterRef, DecimalField, ExpressionWrapper
+from django.db.models import F, Q, Sum, Subquery, OuterRef, DecimalField, ExpressionWrapper
 from django.shortcuts import render
 from django.utils import timezone
 
+from accounts.models import User
 from inventory.models import Inventory
 from orders.models import Order, OrderItem
-from products.models import ProductUnit
+from products.matching import normalize_name
+from products.models import Product, ProductUnit
 from staff.permissions import perm_required
 from staff.excel_utils import build_simple_workbook, workbook_response
 from staff import reports_queries as rq
 
 STAFF_LIST_PAGE_SIZE = 50
 MONEY = DecimalField(max_digits=14, decimal_places=2)
+REPORT_FILTER_RESULTS_LIMIT = 25
+
+
+@perm_required('staff.view_reports')
+def report_product_search(request):
+    query = request.GET.get('q', '').strip()
+    normalized_query = normalize_name(query)
+    results = Product.objects.none()
+    if query:
+        results = Product.objects.filter(
+            is_active=True,
+        ).filter(
+            Q(name_ar__icontains=query)
+            | Q(name_key__icontains=normalized_query)
+            | Q(name_en__icontains=query),
+        ).only('id', 'name_ar', 'name_en').order_by('name_ar')[:REPORT_FILTER_RESULTS_LIMIT]
+    return render(request, 'staff/reports/partials/product_filter_results.html', {'results': results})
+
+
+@perm_required('staff.view_reports')
+def report_client_search(request):
+    query = request.GET.get('q', '').strip()
+    results = User.objects.none()
+    if query:
+        results = User.objects.filter(
+            role=User.Role.CLIENT,
+            client_profile__isnull=False,
+        ).filter(
+            Q(client_profile__business_name__icontains=query) | Q(username__icontains=query),
+        ).select_related('client_profile').order_by('client_profile__business_name')[:REPORT_FILTER_RESULTS_LIMIT]
+    return render(request, 'staff/reports/partials/client_filter_results.html', {'results': results})
 
 
 # =====================================================================
@@ -280,14 +313,19 @@ def stagnant_products(request):
     page_obj = paginator.get_page(request.GET.get('page'))
 
     from products.models import Category, Product
+    selected_product = None
+    if product_id:
+        selected_product = Product.objects.filter(pk=product_id).only(
+            'id', 'name_ar', 'name_en',
+        ).first()
     context = {
         'rows': page_obj,
         'page_obj': page_obj,
         'days': days,
         'categories': Category.objects.filter(is_active=True).order_by('name'),
-        'products': Product.objects.filter(is_active=True).order_by('name_ar').only('id', 'name_ar', 'name_en'),
         'selected_category': category_id or '',
         'selected_product': product_id or '',
+        'selected_product_name': selected_product.display_name if selected_product else '',
     }
     return render(request, 'staff/reports/stagnant.html', context)
 

@@ -1,0 +1,11 @@
+<div class="border border-gray-100 rounded-lg mt-1 divide-y divide-gray-50 max-h-56 overflow-y-auto bg-white shadow-sm">
+    {% for client in results %}
+    <button type="button" data-id="{{ client.id }}" data-name="{{ client.client_profile.business_name }}"
+            @click="clientId = $el.dataset.id; clientQuery = $el.dataset.name"
+            class="w-full text-right px-3 py-2 text-sm hover:bg-gray-50 transition">
+        {{ client.client_profile.business_name }}
+    </button>
+    {% empty %}
+    <p class="px-3 py-2 text-xs text-gray-400">{% if request.GET.q %}لا توجد نتائج مطابقة{% else %}اكتب اسم العميل للبحث{% endif %}</p>
+    {% endfor %}
+</div>

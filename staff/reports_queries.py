@@ -159,12 +159,23 @@ class ReportFilters:
 
     def filter_context(self):
         """قوائم اختيار شريط الفلاتر (موظفين، عملاء، منتجات، أقسام) + القيم المختارة حاليًا."""
+        selected_product = None
+        if self.product_id:
+            selected_product = Product.objects.filter(pk=self.product_id).only(
+                'id', 'name_ar', 'name_en',
+            ).first()
+        selected_client = None
+        if self.client_id:
+            selected_client = User.objects.filter(
+                pk=self.client_id, role=User.Role.CLIENT, client_profile__isnull=False,
+            ).select_related('client_profile').first()
         return {
             'employees': Employee.objects.all().order_by('username'),
-            'clients': User.objects.filter(role=User.Role.CLIENT, client_profile__isnull=False)
-                .select_related('client_profile').order_by('client_profile__business_name'),
+            'selected_client_name': (
+                selected_client.client_profile.business_name if selected_client else ''
+            ),
             'categories': Category.objects.filter(is_active=True).order_by('name'),
-            'products': Product.objects.filter(is_active=True).order_by('name_ar').only('id', 'name_ar', 'name_en'),
+            'selected_product_name': selected_product.display_name if selected_product else '',
             'period_choices': PERIOD_CHOICES,
             'selected_period': self.period,
             'selected_employee': self.employee_id,

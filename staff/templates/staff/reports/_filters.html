@@ -4,8 +4,8 @@
    شريط الفلاتر الموحّد لكل صفحات قسم التقارير.
    بيتوقع الـ context التالي (بيوفره ReportFilters.filter_context()):
    period_choices, selected_period, date_from, date_to,
-   employees, selected_employee, clients, selected_client,
-   categories, selected_category, products, selected_product
+   employees, selected_employee, selected_client_name, selected_client,
+   categories, selected_category, selected_product_name, selected_product
    ============================================================
 {% endcomment %}
 <form method="get" hx-boost="false" class="no-print bg-white rounded-2xl shadow-sm p-4 md:p-5 mb-6"
@@ -40,15 +40,18 @@
                 {% endfor %}
             </select>
         </div>
-        <div>
+        <div x-data="{ clientQuery: '{{ selected_client_name|escapejs }}', clientId: '{{ selected_client }}' }" class="relative">
             <label for="filter_client" class="text-xs font-medium text-gray-500 mb-1 block">العميل</label>
-            <select name="client" id="filter_client"
-                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-400">
-                <option value="">كل العملاء</option>
-                {% for c in clients %}
-                <option value="{{ c.id }}" {% if selected_client == c.id|stringformat:'s' %}selected{% endif %}>{{ c.client_profile.business_name }}</option>
-                {% endfor %}
-            </select>
+            <input type="text" id="filter_client" name="q" x-model="clientQuery" autocomplete="off"
+                   placeholder="ابحث عن عميل..."
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-400"
+                   hx-get="{% url 'staff:reports_client_search' %}"
+                   hx-trigger="keyup changed delay:300ms, focus"
+                   hx-target="#client-filter-results" hx-include="this">
+            <input type="hidden" name="client" x-model="clientId">
+            <button type="button" x-show="clientId" x-cloak @click="clientId = ''; clientQuery = ''; document.getElementById('client-filter-results').innerHTML = '';"
+                    class="absolute left-2 bottom-2 text-gray-400 hover:text-red-500" aria-label="مسح العميل">×</button>
+            <div id="client-filter-results" class="absolute z-10 w-full"></div>
         </div>
         <div>
             <label for="filter_category" class="text-xs font-medium text-gray-500 mb-1 block">القسم</label>
@@ -60,15 +63,18 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="sm:col-span-2 lg:col-span-2">
+        <div x-data="{ productQuery: '{{ selected_product_name|escapejs }}', productId: '{{ selected_product }}' }" class="sm:col-span-2 lg:col-span-2 relative">
             <label for="filter_product" class="text-xs font-medium text-gray-500 mb-1 block">المنتج</label>
-            <select name="product" id="filter_product"
-                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-400">
-                <option value="">كل المنتجات</option>
-                {% for p in products %}
-                <option value="{{ p.id }}" {% if selected_product == p.id|stringformat:'s' %}selected{% endif %}>{{ p.display_name }}</option>
-                {% endfor %}
-            </select>
+            <input type="text" id="filter_product" name="q" x-model="productQuery" autocomplete="off"
+                   placeholder="ابحث عن منتج..."
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary-400"
+                   hx-get="{% url 'staff:reports_product_search' %}"
+                   hx-trigger="keyup changed delay:300ms, focus"
+                   hx-target="#product-filter-results" hx-include="this">
+            <input type="hidden" name="product" x-model="productId">
+            <button type="button" x-show="productId" x-cloak @click="productId = ''; productQuery = ''; document.getElementById('product-filter-results').innerHTML = '';"
+                    class="absolute left-2 bottom-2 text-gray-400 hover:text-red-500" aria-label="مسح المنتج">×</button>
+            <div id="product-filter-results" class="absolute z-10 w-full"></div>
         </div>
     </div>
     <div class="flex flex-wrap gap-2 mt-4">

@@ -1,0 +1,11 @@
+<div class="border border-gray-100 rounded-lg mt-1 divide-y divide-gray-50 max-h-56 overflow-y-auto bg-white shadow-sm">
+    {% for product in results %}
+    <button type="button" data-id="{{ product.id }}" data-name="{{ product.display_name }}"
+            @click="productId = $el.dataset.id; productQuery = $el.dataset.name"
+            class="w-full text-right px-3 py-2 text-sm hover:bg-gray-50 transition">
+        {{ product.display_name }}
+    </button>
+    {% empty %}
+    <p class="px-3 py-2 text-xs text-gray-400">{% if request.GET.q %}لا توجد نتائج مطابقة{% else %}اكتب اسم المنتج للبحث{% endif %}</p>
+    {% endfor %}
+</div>
