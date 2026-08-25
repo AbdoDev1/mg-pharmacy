@@ -147,8 +147,7 @@
                 {% endwith %}
                 {% else %}
                 {% with reversal=row.obj %}
-                <a href="{% url 'invoices:reversal_print' reversal.pk %}" target="_blank"
-                   class="bg-white border border-rose-100 rounded-2xl shadow-sm p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 hover:shadow-md transition block">
+                <div class="bg-white border border-rose-100 rounded-2xl shadow-sm p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <div>
                         <p class="font-bold text-gray-800">{{ reversal.return_number }}</p>
                         <p class="text-xs text-gray-400 mt-1">{{ reversal.created_at|date:"d/m/Y" }}</p>
@@ -159,7 +158,7 @@
                         </span>
                         <span class="font-bold text-rose-700">{{ reversal.amount }} ج.م</span>
                     </div>
-                </a>
+                </div>
                 {% endwith %}
                 {% endif %}
                 {% endfor %}
@@ -213,13 +212,9 @@
                             </td>
                             <td class="px-3 py-2 text-gray-500">
                                 {% if tx.is_return %}
-                                    <a href="{% url 'invoices:reversal_print' tx.invoice_reversal.pk %}" target="_blank" class="text-rose-600 hover:underline">
-                                        ↳ {{ tx.display_reference }}
-                                    </a>
+                                    ↳ {{ tx.display_reference }}
                                 {% elif tx.invoice %}
-                                    <a href="{% url 'invoices:print' tx.invoice.pk %}" target="_blank" class="text-primary-600 hover:underline">
-                                        {{ tx.invoice.invoice_number }}
-                                    </a>
+                                    {{ tx.invoice.invoice_number }}
                                 {% else %}
                                     {{ tx.note }}
                                 {% endif %}

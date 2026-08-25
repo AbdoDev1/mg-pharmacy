@@ -33,8 +33,7 @@
       {% endwith %}
       {% else %}
       {% with reversal=row.obj %}
-      <a href="{% url 'invoices:reversal_print' reversal.pk %}" target="_blank"
-         class="bg-white rounded-2xl shadow-sm p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 hover:shadow-md transition block border border-rose-100">
+      <div class="bg-white rounded-2xl shadow-sm p-5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border border-rose-100">
         <div>
           <p class="font-bold text-gray-800">{{ reversal.return_number }}</p>
           <p class="text-xs text-gray-400 mt-1">{{ reversal.created_at|date:"d/m/Y" }}</p>
@@ -45,7 +44,7 @@
           </span>
           <span class="font-bold text-rose-700">{{ reversal.amount }} ج.م</span>
         </div>
-      </a>
+      </div>
       {% endwith %}
       {% endif %}
       {% endfor %}

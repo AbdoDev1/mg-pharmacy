@@ -20,7 +20,9 @@ def invoice_print(request, pk):
     عرض الفاتورة بشكل جاهز للطباعة (زرار Print بيستخدم window.print())،
     بنفس شكل الفاتورة الورقية: بيانات المخزن، جدول الأصناف، وملخص الحساب
     (الرصيد السابق/الحالي، صافي الفاتورة، المبلغ بالحروف...).
-    الستاف يشوف أي فاتورة، والعميل يشوف بس فواتيره هو.
+    ستاف بس (ADMIN/WAREHOUSE) — الموقع من ناحية العميل مش فيه طباعة فواتير
+    خالص، فمفيش أي لينك ليها في صفحات العميل، والصفحة نفسها متأمّنة هنا
+    كمان عشان محدش يقدر يوصلها بمعرفة الرابط مباشرة.
 
     لو عدد الأصناف أكتر من ITEMS_PER_PRINT_PAGE، الفاتورة بتتقسم لصفحات
     طباعة منفصلة (كل واحدة مرقّمة "1/ن"، "2/ن"...)، وملخص الحساب/المبلغ
@@ -32,8 +34,8 @@ def invoice_print(request, pk):
     )
 
     is_staff = _is_staff(request.user)
-    if not is_staff and invoice.order.client_id != request.user.id:
-        raise PermissionDenied('مينفعش تشوف فاتورة عميل تاني.')
+    if not is_staff:
+        raise PermissionDenied('طباعة الفواتير متاحة للستاف بس.')
 
     # حركة "فاتورة" اللي اتسجّلت تلقائيًا في دفتر حساب العميل لحظة إصدار الفاتورة دي.
     own_transaction = invoice.account_transactions.first()
@@ -76,10 +78,8 @@ def invoice_print(request, pk):
 @login_required
 def reversal_print(request, pk):
     """
-    عرض إشعار المرتجع بشكل جاهز للطباعة — بنفس فلسفة invoice_print تمامًا
-    (الستاف يشوف أي إشعار، والعميل يشوف بس إشعارات فواتيره هو). دور
-    العميل هنا "تسميعي" بحت (راجع طلب Abdo، النقطة 5) — مفيش أي فعل ممكن
-    ياخده هنا غير المشاهدة/الطباعة.
+    عرض إشعار المرتجع بشكل جاهز للطباعة — ستاف بس، بنفس فلسفة invoice_print
+    (راجع تعليقها فوق: مفيش طباعة فواتير/إشعارات من ناحية العميل خالص).
     """
     reversal = get_object_or_404(
         InvoiceReversal.objects.select_related(
@@ -89,8 +89,8 @@ def reversal_print(request, pk):
     )
 
     is_staff = _is_staff(request.user)
-    if not is_staff and reversal.invoice.order.client_id != request.user.id:
-        raise PermissionDenied('مينفعش تشوف إشعار مرتجع لعميل تاني.')
+    if not is_staff:
+        raise PermissionDenied('طباعة إشعارات المرتجع متاحة للستاف بس.')
 
     context = {
         'reversal': reversal,
