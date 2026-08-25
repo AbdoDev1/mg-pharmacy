@@ -31,6 +31,13 @@ class SiteConfig(models.Model):
         verbose_name = 'إعدادات الموقع'
         verbose_name_plural = 'إعدادات الموقع'
 
+    # مفتاح كاش get_solo() — راجع docstring get_solo تحت لسبب الكاش
+    # (البند 4 من PROJECT_ANALYSIS_REPORT.md). نفس مدة كاش فلاتر الكتالوج
+    # (store/views.py — CATALOG_FILTERS_CACHE_TTL) لثبات السلوك عبر
+    # المشروع، لكن مفتاح/متغير مستقل عشانه غرض مختلف تمامًا.
+    GET_SOLO_CACHE_KEY = 'orders:site_config:solo'
+    GET_SOLO_CACHE_TTL = 60
+
     def __str__(self):
         return 'إعدادات الموقع'
 
@@ -38,6 +45,10 @@ class SiteConfig(models.Model):
         # نضمن وجود سطر واحد بس دايمًا (pk=1)
         self.pk = 1
         super().save(*args, **kwargs)
+        # نمسح الكاش فورًا عند أي تعديل من لوحة الأدمن — عشان التعديل
+        # يبان على طول بدل ما يستنى انتهاء GET_SOLO_CACHE_TTL (60 ثانية).
+        from django.core.cache import cache
+        cache.delete(self.GET_SOLO_CACHE_KEY)
 
     def delete(self, *args, **kwargs):
         # منمنع حذف السطر الوحيد
@@ -45,7 +56,32 @@ class SiteConfig(models.Model):
 
     @classmethod
     def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
+        """
+        بترجع (وتنشئ لو مش موجود) السطر الوحيد لإعدادات الموقع.
+
+        قبل كده كانت `cls.objects.get_or_create(pk=1)` بتتنفذ من غير أي
+        كاش — وبما إن get_solo() بتتنادى من context_processor عام
+        (orders/context_processors.py — site_config) بيشتغل على *كل*
+        طلب في النظام (متجر، استيراد، حتى شاشات staff اللي أصلًا مش
+        بتعرض قيمة الإعدادات دي)، وعلى كل htmx swap كمان (context
+        processors بتتنفذ مع كل render() مش بس أول تحميل صفحة) — كان ده
+        استعلام إضافي غير مشروط على 100% من الطلبات، بعكس باقي
+        context processors التانية (cart_count، new_arrivals_count،
+        staff_nav) اللي كل واحد فيهم بيرجع فورًا لو الشرط بتاعه مش
+        متحقق (زائر مش مسجل دخول، موظف، إلخ) — راجع البند 4 من
+        PROJECT_ANALYSIS_REPORT.md.
+
+        السطر ده شبه ثابت عمليًا (بيتغير بس لما الأدمن يعدّل من لوحة
+        التحكم)، فكاش قصير (GET_SOLO_CACHE_TTL) + مسح فوري عند save()
+        آمن تمامًا: تعديل الأدمن يبان فورًا (مش مستني انتهاء الكاش)،
+        وكل الطلبات التانية بتوفر رحلة كاملة لقاعدة البيانات.
+        """
+        from django.core.cache import cache
+
+        obj = cache.get(cls.GET_SOLO_CACHE_KEY)
+        if obj is None:
+            obj, _ = cls.objects.get_or_create(pk=1)
+            cache.set(cls.GET_SOLO_CACHE_KEY, obj, cls.GET_SOLO_CACHE_TTL)
         return obj
 
 

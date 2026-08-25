@@ -3,9 +3,10 @@
 عشان طلب HTTP يرجع فورًا من غير ما ياخد worker كامل لمدة طويلة.
 
 منقول من Biozone (المصدر الأصلي لهذا الفرع). المهام المسجّلة حاليًا:
-products/tasks.py (استيراد/تصدير ملفات المنتجات) وstaff/tasks.py (النسخ
-الاحتياطي اليدوي). app.autodiscover_tasks() تحت بيلاقيها تلقائيًا من
-غير أي تسجيل يدوي.
+products/tasks.py (استيراد/تصدير ملفات المنتجات)، staff/tasks.py (النسخ
+الاحتياطي اليدوي وتصدير التقارير)، وnotifications/tasks.py (نشر الإشعار
+الجماعي — fanout_trim_and_push_task). app.autodiscover_tasks() تحت
+بيلاقيها تلقائيًا من غير أي تسجيل يدوي.
 
 نفس Redis المستخدم أصلاً كـ CACHES/CHANNEL_LAYERS (راجع settings.py)
 بيتستخدم هنا كـ broker + result backend على قاعدة بيانات منفصلة، من غير

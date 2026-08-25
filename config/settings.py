@@ -217,6 +217,19 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_TIME_LIMIT = 15 * 60
 CELERY_TASK_SOFT_TIME_LIMIT = 10 * 60
 
+# توجيه مهمة النسخ الاحتياطي لطابور منفصل (backup) عن باقي المهام (استيراد/
+# تصدير المنتجات والتقارير، ونشر الإشعارات) اللي فاضلة على الطابور
+# الافتراضي 'celery'. قبل كده كل حاجة كانت بتتصف في نفس الطابور على نفس
+# الـworker (CELERY_CONCURRENCY=1 في docker-compose.yml)، فنسخة احتياطية
+# طويلة (dump + رفع لسحابة خارجية عبر rclone، راجع staff/services/backup.py)
+# كانت ممكن تأخر استيراد أو تصدير موظف تاني مستني في نفس الطابور خلفها —
+# البند 7 من PROJECT_ANALYSIS_REPORT.md. الطابور ده بيتستهلك من worker
+# منفصل تمامًا (celery-worker-backup في docker-compose.yml)، مش من نفس
+# الـworker بتاع celery-worker — راجع entrypoint.sh (CELERY_QUEUES).
+CELERY_TASK_ROUTES = {
+    'staff.tasks.run_backup_task': {'queue': 'backup'},
+}
+
  #----- الإيميل (لازم لإرسال روابط إعادة تعيين كلمة السر) -----
 # EMAIL_BACKEND الافتراضي بيطبع الإيميل في الـ console (docker compose logs -f web-store)
 # ده مفيد جدًا للتجربة المحلية من غير ما تحتاج SMTP حقيقي.

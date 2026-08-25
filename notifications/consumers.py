@@ -80,6 +80,17 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             'status': event['status'],
         }))
 
+    async def report_export_status(self, event):
+        """
+        نظير export_status فوق تمامًا بس لبناء ملف تصدير تقرير (قسم
+        staff/reports.py) في الخلفية بدل تصدير المنتجات — راجع
+        staff/tasks.py (build_report_export_task) وstaff/report_export.py.
+        """
+        await self.send(text_data=json.dumps({
+            'event': 'report_export_status',
+            'status': event['status'],
+        }))
+
     async def backup_status(self, event):
         """
         Handler لحالة النسخ الاحتياطي اللحظية (running/success/error)

@@ -1,4 +1,4 @@
-from django.test import Client as HttpClient, TestCase
+from django.test import Client as HttpClient, TestCase, override_settings
 from django.urls import reverse
 
 from accounts.models import User
@@ -95,8 +95,15 @@ class NotifyStaffWithPermTestCase(TestCase):
         self.assertTrue(Notification.objects.filter(recipient=self.warehouse_with_perm).exists())
 
 
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 class NotifyAllClientsTestCase(TestCase):
-    """بتبعت لكل عميل نشط (status=ACTIVE)، مش العملاء المعلّقين أو المرفوضين."""
+    """
+    بتبعت لكل عميل نشط (status=ACTIVE)، مش العملاء المعلّقين أو المرفوضين.
+    CELERY_TASK_ALWAYS_EAGER عشان fanout_trim_and_push_task (راجع
+    notifications/tasks.py — منقولة من threading.Thread خام) تتنفذ فعليًا
+    جوه نفس الاختبار بدل ما تتأجل لـworker حقيقي — نفس نمط
+    ExportProductsFlowTestCase في staff/tests_export_products.py.
+    """
 
     def setUp(self):
         self.active_client = User.objects.create_user(

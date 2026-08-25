@@ -1,0 +1,58 @@
+{% extends 'staff/base.html' %}
+{% block title %}جاري تجهيز ملف التقرير — MG Pharmacy{% endblock %}
+{% block breadcrumbs %}
+{% load staff_ui %}
+<nav class="flex items-center text-sm text-gray-500 mb-4">
+    {% crumb "الرئيسية" "staff:dashboard" %}
+    {% crumb "التقارير" "staff:reports_dashboard" %}
+    {% crumb "تصدير" %}
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<!-- شاشة انتظار بينما build_report_export_task شغالة في celery-worker (راجع
+     staff/report_export.py وstaff/tasks.py وreports_export_processing في
+     staff/views/reports.py). نفس فكرة export_processing.html بتاع تصدير
+     المنتجات بالظبط (WebSocket + poll احتياطي)، بس event الاسم هنا
+     report_export_status بدل export_status. -->
+<div class="bg-white rounded-2xl shadow-sm p-10 flex flex-col items-center text-center gap-4"
+     x-data="reportExportProcessingView()">
+    <div class="w-12 h-12 rounded-full border-4 border-primary-100 border-t-primary-600 animate-spin"></div>
+    <div>
+        <p class="font-semibold text-gray-800">جاري تجهيز ملف التقرير…</p>
+        <p class="text-sm text-gray-500 mt-1">هيبدأ التحميل تلقائيًا لما الملف يخلص.</p>
+    </div>
+</div>
+
+<script>
+function reportExportProcessingView() {
+    return {
+        pollTimer: null,
+        wsUnsubscribe: null,
+        recheck() {
+            window.location.href = "{% url 'staff:reports_export_processing' %}";
+        },
+        init() {
+            // شبكة أمان: لو الـ WebSocket اتقطع أو الرسالة اتفوتت، بنعيد
+            // التحقق من السيرفر كل 4 ثواني على أي حال.
+            this.pollTimer = setInterval(() => this.recheck(), 4000);
+
+            const handler = (e) => {
+                if (e.detail.event !== 'report_export_status') return;
+                if (e.detail.status === 'done' || e.detail.status === 'error') {
+                    this.recheck();
+                }
+            };
+            window.addEventListener('biozone:ws-message', handler);
+            this.wsUnsubscribe = () => window.removeEventListener('biozone:ws-message', handler);
+        },
+        destroy() {
+            clearInterval(this.pollTimer);
+            if (this.wsUnsubscribe) this.wsUnsubscribe();
+        },
+    };
+}
+</script>
+
+{% endblock %}

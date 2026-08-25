@@ -217,12 +217,17 @@ services:
     mem_limit: 200m
     cpus: 0.25
 
-  # Celery worker — بيشغّل كل المهام في الخلفية دلوقتي: استيراد/تصدير
-  # ملفات المنتجات (products/tasks.py) والنسخ الاحتياطي اليدوي
-  # (staff/tasks.py — run_backup_task). CELERY_CONCURRENCY=1 يعني
-  # process واحد بيشغّل المهام دي واحدة ورا التانية، مش بالتوازي — لو
-  # الحمل زاد (مثلاً تصدير كبير + نسخة احتياطية في نفس الوقت)، ده أول
-  # رقم يستاهل مراجعة.
+  # Celery worker — بيشغّل استيراد/تصدير ملفات المنتجات (products/tasks.py)
+  # وتصدير التقارير (staff/tasks.py — build_report_export_task) ونشر
+  # الإشعارات الجماعية (notifications/tasks.py). النسخ الاحتياطي
+  # (run_backup_task) بقى على worker منفصل (celery-worker-backup تحت) —
+  # قبل كده كانت كل المهام دي بتتصف في طابور واحد على نفس الـworker،
+  # فنسخة احتياطية طويلة كانت ممكن تأخر استيراد/تصدير موظف تاني (البند 7
+  # من PROJECT_ANALYSIS_REPORT.md). CELERY_QUEUES مش متحددة هنا فبترجع
+  # لـ'celery' الافتراضي (راجع entrypoint.sh) — يعني الطابور ده بس، مش
+  # 'backup'. CELERY_CONCURRENCY=1 يعني process واحد بيشغّل المهام دي
+  # واحدة ورا التانية — لو الحمل زاد (استيراد كبير + تصدير تقرير في نفس
+  # الوقت)، ده أول رقم يستاهل مراجعة.
   celery-worker:
     <<: *web-base
     environment:
@@ -242,6 +247,30 @@ services:
     # واحدة في المرة الواحدة.
     mem_limit: 200m
     cpus: 0.5
+
+  # Worker منفصل مخصص لطابور 'backup' بس (run_backup_task) — راجع
+  # التعليق فوق وconfig/settings.py (CELERY_TASK_ROUTES) لسبب الفصل
+  # الكامل. المهمة نفسها I/O-bound غالبًا (pg_dump ثم رفع لسحابة خارجية
+  # عبر rclone — راجع staff/services/backup.py)، مش CPU-heavy زي بناء
+  # ملف إكسل كبير، فحد موارد أقل من celery-worker الأساسي كفاية. حجم
+  # صغير عمدًا (نفس فلسفة pgbouncer/nginx في الملف ده) — الهدف عزل تأثير
+  # النسخ الاحتياطي مش تشغيله بسرعة أكبر.
+  celery-worker-backup:
+    <<: *web-base
+    environment:
+      <<: *web-base-environment
+      SERVICE_ROLE: celery
+      CELERY_QUEUES: backup
+      CELERY_CONCURRENCY: 1
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web-store:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.25
 
   nginx:
     image: nginx:alpine
