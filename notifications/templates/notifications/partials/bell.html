@@ -43,8 +43,17 @@ htmx (زي أي Alpine component عادي تاني في الصفحة) لأنها
          اللي كان بيتحدف يمين ومش بيتحرك. الحل: fixed بدل absolute تحت
          sm، مع inset-x ثابتة نسبة للشاشة كلها (مش نسبة لموضع الجرس)، فمهما
          كان الجرس فين بالظبط النافذة بتفضل جوه حدود الشاشة دايمًا. من sm
-         لفوق (شاشات أوسع، مفيش نفس المشكلة) رجّعنا نفس التموضع القديم. -->
-    <div x-show="open" x-cloak x-transition
+         لفوق (شاشات أوسع، مفيش نفس المشكلة) رجّعنا نفس التموضع القديم.
+
+         top-16 كانت رقم ثابت (بيفترض هيدر سطر واحد بس، ~64px). ده كان
+         بيتكسر فعليًا على الموبايل في الصفحات اللي فيها هيدر بيتقسم لسطرين
+         (nav بتاع العميل فيه flex-wrap، وبيحصل فعليًا لما يبقى فيه أزرار
+         كتير — مثلاً الستاف بيشوف جرس + اسم + "لوحة التحكم" + خروج كلهم
+         في نفس الصف): النافذة كانت بتتموضع فوق نص السطر التاني وتغطي/تتغطى
+         بيه بدل ما تظهر تحت الهيدر بالكامل. positionPanel() تحت بتحسب
+         الارتفاع الحقيقي للهيدر (nav أو header) وقت الفتح وتحط top الصح
+         بدل الرقم الثابت. -->
+    <div x-show="open" x-cloak x-transition x-ref="panel"
          class="fixed inset-x-4 top-16 sm:absolute sm:inset-x-auto sm:left-0 sm:top-auto sm:mt-2
                 w-auto sm:w-80 sm:max-w-[90vw] bg-white rounded-lg shadow-lg border border-gray-100 z-50">
         <div class="flex items-center justify-between px-4 py-2 border-b border-gray-100">
@@ -223,6 +232,7 @@ function notificationBellView() {
         unreadCount: window.__biozoneNotifState.unreadCount,
         items: window.__biozoneNotifState.items,
         _unsubscribe: null,
+        _resizeHandler: null,
         init() {
             this.unreadCount = window.__biozoneNotifState.unreadCount;
             this.items = window.__biozoneNotifState.items;
@@ -230,13 +240,36 @@ function notificationBellView() {
                 this.unreadCount = window.__biozoneNotifState.unreadCount;
                 this.items = window.__biozoneNotifState.items;
             });
+            // إعادة حساب مكان النافذة لو المستخدم لف الموبايل (orientation
+            // change) أو غيّر حجم المتصفح والنافذة لسه مفتوحة.
+            this._resizeHandler = () => { if (this.open) this.positionPanel(); };
+            window.addEventListener('resize', this._resizeHandler);
         },
         destroy() {
             if (this._unsubscribe) this._unsubscribe();
+            if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
         },
         toggle() {
             this.open = !this.open;
-            if (this.open) window.__biozoneNotifState.refresh();
+            if (this.open) {
+                window.__biozoneNotifState.refresh();
+                this.$nextTick(() => this.positionPanel());
+            }
+        },
+        // بتحسب فين تحط النافذة تحت أي هيدر حاوي للجرس (nav بتاع العميل
+        // أو header بتاع لوحة الموظف)، بدل رقم ثابت مفترض إن الهيدر سطر
+        // واحد بس. من sm لفوق بترجع الـ top للـ CSS الأصلي (sm:top-auto)
+        // عشان مايبوظش التموضع absolute العادي جنب الجرس.
+        positionPanel() {
+            const panel = this.$refs.panel;
+            if (!panel) return;
+            if (window.innerWidth >= 640) {
+                panel.style.top = '';
+                return;
+            }
+            const header = this.$el.closest('nav, header');
+            const bottom = header ? header.getBoundingClientRect().bottom : 64;
+            panel.style.top = Math.max(bottom, 0) + 8 + 'px';
         },
         markAllRead() {
             const token = this.$el.querySelector('[name=csrfmiddlewaretoken]').value;
