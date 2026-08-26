@@ -230,6 +230,15 @@ CELERY_TASK_ROUTES = {
     'staff.tasks.run_backup_task': {'queue': 'backup'},
 }
 
+# رقم/أرقام تليفون تظهر في ترويسة الفاتورة المطبوعة (راجع
+# invoices/templates/invoices/print.html وinvoices/views.py). فاضية
+# افتراضيًا عمدًا — قبل كده كان الرقم متكتوب صريح في القالب وكان لسه
+# أرقام Biozone القديمة (010 555 46 330 / 01556462929 — 01101551533)
+# مش أرقام MG Pharmacy الحقيقية. متعرفش هنا القيمة الصح، فبدل ما نحط رقم
+# تاني غلط، الإعداد ده بيتحدد من .env، والقالب مبيعرضش السطر ده خالص لو
+# فاضي (بدل ما يعرض رقم فاضي أو placeholder غريب).
+INVOICE_COMPANY_PHONE = config('INVOICE_COMPANY_PHONE', default='')
+
  #----- الإيميل (لازم لإرسال روابط إعادة تعيين كلمة السر) -----
 # EMAIL_BACKEND الافتراضي بيطبع الإيميل في الـ console (docker compose logs -f web-store)
 # ده مفيد جدًا للتجربة المحلية من غير ما تحتاج SMTP حقيقي.

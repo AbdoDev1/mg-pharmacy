@@ -60,13 +60,14 @@
                     MG
                 </div>
                 <div class="flex-1">
-                    <h1 class="text-2xl font-extrabold leading-tight">MG Pharmacy <span class="text-gray-400">|</span> إم چي فارماسي</h1>
-                    <p class="text-gray-500 text-xs mt-0.5">مورّد مستلزمات طبية وتجميلية بالجملة</p>
+                    <h1 class="text-2xl font-extrabold leading-tight">MG Pharmacy للمستلزمات الطبية</h1>
                 </div>
                 <div class="text-left">
+                    {% if company_phone %}
                     <p class="text-gray-600 text-xs num leading-relaxed">
-                        {# TODO: رقم تليفون Biozone القديم اتشال - محتاج رقم MG Pharmacy الرسمي هنا #}
+                        {{ company_phone }}
                     </p>
+                    {% endif %}
                     {% if item_pages|length > 1 %}
                     <p class="mt-1 inline-block bg-gray-900 text-white text-xs font-bold num px-2 py-0.5 rounded">
                         {{ forloop.counter }}/{{ item_pages|length }}

@@ -103,27 +103,19 @@
 </div>
 {% with url_name=request.resolver_match.url_name %}
 <!-- Topbar -->
-<header class="fixed top-0 right-0 left-0 h-14 bg-primary-600 shadow z-30 flex items-center px-4 gap-2 sm:gap-4">
-    <button @click="sidebarOpen = !sidebarOpen" class="text-primary-100 hover:text-white shrink-0">
+<header class="fixed top-0 right-0 left-0 h-14 bg-primary-600 shadow z-30 flex items-center px-4 gap-4">
+    <button @click="sidebarOpen = !sidebarOpen" class="text-primary-100 hover:text-white">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
     </button>
-    <!-- "MG Pharmacy" كامل بيتقصر لـ"MG" بس على الموبايل — الاسم الكامل +
-         اسم المستخدم + زرار الخروج كانوا بياخدوا مساحة أكتر من عرض شاشات
-         الموبايل الضيقة (مفيش flex-wrap هنا عمدًا عشان الهيدر يفضل سطر
-         واحد ثابت الارتفاع)، فكانوا بيتزقّوا برّا حدود الشاشة (جرس
-         الإشعارات وزرار الخروج بيختفوا من غير سكرول أفقي). -->
-    <a href="{% url 'staff:dashboard' %}" class="font-bold text-white text-lg hover:text-primary-100 shrink-0">
-        <span class="sm:hidden">MG</span>
-        <span class="hidden sm:inline">MG Pharmacy</span>
-    </a>
-    <div class="mr-auto flex items-center gap-2 sm:gap-4 min-w-0">
+    <a href="{% url 'staff:dashboard' %}" class="font-bold text-white text-lg hover:text-primary-100">MG Pharmacy</a>
+    <div class="mr-auto flex items-center gap-4">
         {% include 'notifications/partials/bell.html' %}
-        <span class="text-sm text-primary-100 truncate max-w-[72px] sm:max-w-none">{{ request.user.username }}</span>
-        <form method="post" action="{% url 'staff:logout' %}" class="inline shrink-0" hx-boost="false">
+        <span class="text-sm text-primary-100">{{ request.user.username }}</span>
+        <form method="post" action="{% url 'staff:logout' %}" class="inline" hx-boost="false">
             {% csrf_token %}
-            <button type="submit" class="text-sm text-red-200 hover:text-white hover:underline whitespace-nowrap">تسجيل الخروج</button>
+            <button type="submit" class="text-sm text-red-200 hover:text-white hover:underline">تسجيل الخروج</button>
         </form>
     </div>
 </header>

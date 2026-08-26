@@ -6,6 +6,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>فاتورة قبل نهائية — طلب #{{ order.pk }}</title>
+    <!-- ملحوظة (Abdo): القالب ده مش متربط بأي view/URL حاليًا (تأكدت بالبحث
+         في الكود كله) — فيتشر "فاتورة قبل نهائية" مش موجود فعليًا في
+         النظام دلوقتي، رغم إن القالب موجود. سايبه من غير ما أمسحه أو
+         أوصّله (مش قراري إني أرجّع فيتشر اتشال)، بس صلّحت هوية المتجر
+         هنا كمان (كانت لسه Bio Zone القديمة) عشان لو حد وصّله تاني يوم
+         ميوقعش في نفس الباج اللي كان في invoices/print.html.
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
     <style>
@@ -53,13 +59,14 @@
                     MG
                 </div>
                 <div class="flex-1">
-                    <h1 class="text-2xl font-extrabold leading-tight">MG Pharmacy <span class="text-gray-400">|</span> إم چي فارماسي</h1>
-                    <p class="text-gray-500 text-xs mt-0.5">مورّد مستلزمات طبية وتجميلية بالجملة</p>
+                    <h1 class="text-2xl font-extrabold leading-tight">MG Pharmacy للمستلزمات الطبية</h1>
                 </div>
                 <div class="text-left">
+                    {% if company_phone %}
                     <p class="text-gray-600 text-xs num leading-relaxed">
-                        {# TODO: رقم تليفون Biozone القديم اتشال - محتاج رقم MG Pharmacy الرسمي هنا #}
+                        {{ company_phone }}
                     </p>
+                    {% endif %}
                     {% if item_pages|length > 1 %}
                     <p class="mt-1 inline-block bg-gray-900 text-white text-xs font-bold num px-2 py-0.5 rounded">
                         {{ forloop.counter }}/{{ item_pages|length }}

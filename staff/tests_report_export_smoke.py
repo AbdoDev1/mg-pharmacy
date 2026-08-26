@@ -68,6 +68,23 @@ class ReportExportSmokeTestCase(TestCase):
                 self.assertEqual(download_response.status_code, 200)
                 self.assertIn('spreadsheetml', download_response['Content-Type'])
 
+    def test_pagination_notice_partial_shown_only_with_multiple_pages(self):
+        from django.core.paginator import Paginator
+        from django.template.loader import render_to_string
+
+        single_page = Paginator(range(10), 50).get_page(1)
+        html_single = render_to_string(
+            'staff/reports/partials/_print_pagination_notice.html', {'page_obj': single_page},
+        )
+        self.assertNotIn('الطباعة بتشمل الصفحة الحالية بس', html_single)
+
+        multi_page = Paginator(range(120), 50).get_page(1)
+        html_multi = render_to_string(
+            'staff/reports/partials/_print_pagination_notice.html', {'page_obj': multi_page},
+        )
+        self.assertIn('الطباعة بتشمل الصفحة الحالية بس', html_multi)
+        self.assertIn('120', html_multi)
+
     def test_processing_without_started_export_redirects(self):
         response = self.http.get(reverse('staff:reports_export_processing'))
         self.assertRedirects(response, reverse('staff:reports_dashboard'))

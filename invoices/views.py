@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Sum
@@ -20,9 +21,7 @@ def invoice_print(request, pk):
     عرض الفاتورة بشكل جاهز للطباعة (زرار Print بيستخدم window.print())،
     بنفس شكل الفاتورة الورقية: بيانات المخزن، جدول الأصناف، وملخص الحساب
     (الرصيد السابق/الحالي، صافي الفاتورة، المبلغ بالحروف...).
-    ستاف بس (ADMIN/WAREHOUSE) — الموقع من ناحية العميل مش فيه طباعة فواتير
-    خالص، فمفيش أي لينك ليها في صفحات العميل، والصفحة نفسها متأمّنة هنا
-    كمان عشان محدش يقدر يوصلها بمعرفة الرابط مباشرة.
+    الستاف يشوف أي فاتورة، والعميل يشوف بس فواتيره هو.
 
     لو عدد الأصناف أكتر من ITEMS_PER_PRINT_PAGE، الفاتورة بتتقسم لصفحات
     طباعة منفصلة (كل واحدة مرقّمة "1/ن"، "2/ن"...)، وملخص الحساب/المبلغ
@@ -34,8 +33,8 @@ def invoice_print(request, pk):
     )
 
     is_staff = _is_staff(request.user)
-    if not is_staff:
-        raise PermissionDenied('طباعة الفواتير متاحة للستاف بس.')
+    if not is_staff and invoice.order.client_id != request.user.id:
+        raise PermissionDenied('مينفعش تشوف فاتورة عميل تاني.')
 
     # حركة "فاتورة" اللي اتسجّلت تلقائيًا في دفتر حساب العميل لحظة إصدار الفاتورة دي.
     own_transaction = invoice.account_transactions.first()
@@ -71,6 +70,7 @@ def invoice_print(request, pk):
         'current_balance': current_balance,
         'public_total': public_total,
         'amount_in_words': amount_to_arabic_words(invoice.total),
+        'company_phone': settings.INVOICE_COMPANY_PHONE,
     }
     return render(request, 'invoices/print.html', context)
 
@@ -78,8 +78,10 @@ def invoice_print(request, pk):
 @login_required
 def reversal_print(request, pk):
     """
-    عرض إشعار المرتجع بشكل جاهز للطباعة — ستاف بس، بنفس فلسفة invoice_print
-    (راجع تعليقها فوق: مفيش طباعة فواتير/إشعارات من ناحية العميل خالص).
+    عرض إشعار المرتجع بشكل جاهز للطباعة — بنفس فلسفة invoice_print تمامًا
+    (الستاف يشوف أي إشعار، والعميل يشوف بس إشعارات فواتيره هو). دور
+    العميل هنا "تسميعي" بحت (راجع طلب Abdo، النقطة 5) — مفيش أي فعل ممكن
+    ياخده هنا غير المشاهدة/الطباعة.
     """
     reversal = get_object_or_404(
         InvoiceReversal.objects.select_related(
@@ -89,8 +91,8 @@ def reversal_print(request, pk):
     )
 
     is_staff = _is_staff(request.user)
-    if not is_staff:
-        raise PermissionDenied('طباعة إشعارات المرتجع متاحة للستاف بس.')
+    if not is_staff and reversal.invoice.order.client_id != request.user.id:
+        raise PermissionDenied('مينفعش تشوف إشعار مرتجع لعميل تاني.')
 
     context = {
         'reversal': reversal,
