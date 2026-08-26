@@ -6,9 +6,9 @@
 (راجع filter_group.html).
 {% endcomment %}
 <aside class="hidden shrink-0 lg:block lg:w-64">
-    <div class="sticky top-20 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+    <div class="sticky top-20 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-[0_4px_10px_rgba(7,28,66,0.05)]">
         <div class="border-b border-gray-100 px-4 py-3">
-            <h2 class="text-sm font-bold text-gray-800">الفلاتر</h2>
+            <h2 class="text-sm font-bold text-primary-900">الفلاتر</h2>
         </div>
         <div>
             {% include 'store/partials/filter_group.html' with group_title='الأقسام' query_var='categoryQuery' selected_var='selectedCategory' options_var='filteredCategories' choose_fn='chooseCategory' all_label='كل الأقسام' search_placeholder='بحث في الأقسام...' empty_label='لا توجد أقسام مطابقة' input_id='category-search-desktop' group_id='category-group-desktop' show_search=category_search_enabled %}

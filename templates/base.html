@@ -68,11 +68,11 @@
 </head>
 <body class="bg-surface-page min-h-screen" dir="rtl" {% block body_attrs %}{% endblock %}>
 
-<!-- Navbar: نفس هوية لوحة الموظفين (primary-600) بدل الأبيض القديم، عشان
-     يبقى شكل موحّد في السيستم كله، ولأن جرس الإشعارات (bell.html) أصلاً
-     متلوّن بألوان تفترض هيدر غامق (text-primary-100) وكان يختفي على خلفية
-     بيضاء. -->
-<nav class="bg-primary-600 shadow-md sticky top-0 z-50 px-4 sm:px-6 py-3 flex flex-wrap justify-between items-center gap-2">
+<!-- Navbar: Deep Navy (primary-800) بدل primary-600 القديم — مطابقة لهوية
+     تصميم "Premium Pharmaceutical Excellence" (هيدر Deep Navy #071C42)،
+     وبرضه أغمق وأوضح كخلفية لجرس الإشعارات (bell.html) اللي بيفترض هيدر
+     غامق (text-primary-100). -->
+<nav class="bg-primary-800 shadow-md sticky top-0 z-50 px-4 sm:px-6 py-3 flex flex-wrap justify-between items-center gap-2">
     <a href="{% url 'store:home' %}" class="flex items-center gap-2 text-xl font-bold text-white shrink-0">
         {% comment %}
         حرف M ذهبي بدل الأبيض القديم — نفس هوية الفافيكون (كحلي + ذهبي)
@@ -95,7 +95,7 @@
                 </a>
 
                 <a href="{% url 'staff:dashboard' %}"
-                   class="text-sm bg-primary-800 hover:bg-primary-900 text-white px-4 py-2 rounded-lg transition">
+                   class="text-sm bg-white text-primary-800 hover:bg-primary-50 px-4 py-2 rounded-lg transition font-semibold">
                     لوحة التحكم
                 </a>
 
@@ -205,6 +205,47 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+
+<!-- فوتر: مضاف حديثًا (مكنش موجود قبل كده) — بنفس هوية تصميم "Premium
+     Pharmaceutical Excellence" (خلفية Deep Navy فاتحة/surface-container-highest،
+     شعار M ذهبي، روابط أساسية). من غير أي بيانات تواصل (رقم هاتف/واتساب/بريد)
+     لأنها مش موجودة فعليًا في المشروع دلوقتي — يفضل يتضاف هنا لاحقًا لو
+     اتحددت أرقام حقيقية. -->
+<footer class="bg-surface-page border-t border-gray-200 mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-8">
+        <div>
+            <a href="{% url 'store:home' %}" class="flex items-center gap-2 text-lg font-bold text-primary-900 mb-3">
+                <span class="w-8 h-8 rounded-lg bg-primary-800 flex items-center justify-center text-sm text-gold-400">M</span>
+                MG Pharmacy
+            </a>
+            <p class="text-sm text-gray-500 max-w-xs">
+                منصة أونلاين لبيع المستلزمات الطبية للصيدليات والمستشفيات والعيادات، بالجملة وبالقطاعي.
+            </p>
+        </div>
+        <div>
+            <h4 class="font-bold text-primary-900 mb-3 text-sm">روابط سريعة</h4>
+            <ul class="space-y-2 text-sm">
+                <li><a href="{% url 'store:home' %}" class="text-gray-500 hover:text-primary-700">المتجر</a></li>
+                {% if request.user.is_authenticated and request.user.role == 'CLIENT' %}
+                <li><a href="{% url 'store:new_arrivals' %}" class="text-gray-500 hover:text-primary-700">الوارد الجديد</a></li>
+                <li><a href="{% url 'orders:order_list' %}" class="text-gray-500 hover:text-primary-700">طلباتي</a></li>
+                {% else %}
+                <li><a href="{% url 'accounts:login' %}" class="text-gray-500 hover:text-primary-700">تسجيل الدخول</a></li>
+                <li><a href="{% url 'accounts:register' %}" class="text-gray-500 hover:text-primary-700">إنشاء حساب جديد</a></li>
+                {% endif %}
+            </ul>
+        </div>
+        <div>
+            <h4 class="font-bold text-primary-900 mb-3 text-sm">جودة وثقة</h4>
+            <p class="text-sm text-gray-500">
+                منتجات أصلية ومضمونة، مخصصة للتعامل بين الصيدليات والمستشفيات والعيادات.
+            </p>
+        </div>
+    </div>
+    <div class="border-t border-gray-200 py-4 text-center text-xs text-gray-400">
+        © {% now "Y" %} MG Pharmacy. جميع الحقوق محفوظة.
+    </div>
+</footer>
 
 {% include 'partials/toast_system.html' %}
 

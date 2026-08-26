@@ -4,68 +4,122 @@
 
 {% block content %}
 
-<div class="max-w-2xl mx-auto px-4 py-8">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">إتمام الطلب</h1>
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <h1 class="text-2xl md:text-3xl font-bold text-primary-900 mb-6">إتمام الطلب</h1>
 
-    <div class="bg-white rounded-2xl shadow-sm p-6 mb-6">
-      <h2 class="font-bold text-gray-700 mb-4">ملخص الطلب</h2>
-      <div class="space-y-3">
-        {% for item in cart_items %}
-        <div class="flex justify-between text-sm">
-          <span class="text-gray-600">
-            {{ item.unit.product.name_ar }} × {{ item.quantity }}
-            {% if item.is_large_unit %}
-              <span class="inline-block bg-green-100 text-green-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mr-1">{{ item.unit.name }}</span>
-            {% endif %}
-          </span>
-          <span class="font-semibold text-gray-800">{{ item.subtotal }} ج.م</span>
-        </div>
-        {% endfor %}
-        <div class="border-t pt-3 flex justify-between font-bold">
-          <span>الإجمالي</span>
-          <span class="text-primary-700 text-lg">{{ total }} ج.م</span>
-        </div>
-      </div>
-    </div>
-
-    <form method="POST" class="bg-white rounded-2xl shadow-sm p-6"
+    <!-- تخطيط عمودين (زي تصميم Stitch): عمود المراجعة/بيانات التوصيل أعرض
+         + عمود ملخص الطلب (كارت كحلي ثابت Sticky) جنبه. الفورم بيلف
+         العمودين مع بعض عشان زرار "تأكيد الطلب" (في عمود الملخص) يفضل
+         جزء من نفس الفورم اللي فيه بيانات التوصيل (في العمود التاني). -->
+    <form method="POST"
           x-data="{ submitting: false }"
           @submit="submitting = true">
       {% csrf_token %}
 
-      <h2 class="font-bold text-gray-700 mb-4">بيانات التوصيل</h2>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
-      <label class="block mb-4">
-        <span class="text-sm font-medium text-gray-700 mb-1 block">اسم المستلم</span>
-        <input type="text" name="delivery_name" required value="{{ delivery_name }}"
-               placeholder="اسم الشخص المستلم للطلب"
-               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">
-      </label>
+        <div class="lg:col-span-2 space-y-6">
 
-      <label class="block mb-4">
-        <span class="text-sm font-medium text-gray-700 mb-1 block">رقم الهاتف</span>
-        <input type="tel" name="delivery_phone" required value="{{ delivery_phone }}"
-               placeholder="رقم للتواصل عند التوصيل"
-               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">
-      </label>
+          <!-- مراجعة السلة: عرض فقط (تعديل الكمية بيتم من صفحة السلة نفسها) -->
+          <section class="bg-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.05)] p-6">
+            <h2 class="font-bold text-primary-900 mb-4 flex items-center gap-2">
+              <svg class="w-5 h-5 text-gold-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 1.994-4.457 2.781-6.987a1.125 1.125 0 00-1.087-1.437H5.106M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/></svg>
+              مراجعة السلة
+            </h2>
+            {% for item in cart_items %}
+            <div class="flex items-center justify-between gap-4 py-4 border-b border-gray-100 last:border-0">
+              <div class="flex items-center gap-4 min-w-0">
+                <div class="w-16 h-16 shrink-0 bg-surface-page/60 rounded-lg flex items-center justify-center p-1.5 overflow-hidden">
+                  {% if item.unit.product.image %}
+                  <img src="{% if item.unit.product.image.thumbnail %}{{ item.unit.product.image.thumbnail.url }}{% else %}{{ item.unit.product.image.image.url }}{% endif %}"
+                       alt="{{ item.unit.product.name_ar }}" class="w-full h-full object-contain">
+                  {% else %}
+                  <svg class="w-6 h-6 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
+                  </svg>
+                  {% endif %}
+                </div>
+                <div class="min-w-0">
+                  <h3 class="font-semibold text-primary-900 text-sm truncate">{{ item.unit.product.name_ar }}</h3>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    {{ item.unit.name }} × {{ item.quantity }}
+                    {% if item.is_large_unit %}
+                    <span class="inline-block bg-green-100 text-green-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mr-1">{{ item.unit.name }}</span>
+                    {% endif %}
+                  </p>
+                </div>
+              </div>
+              <span class="font-bold text-primary-900 text-sm shrink-0">{{ item.subtotal }} ج.م</span>
+            </div>
+            {% endfor %}
+          </section>
 
-      <label class="block mb-4">
-        <span class="text-sm font-medium text-gray-700 mb-1 block">عنوان التوصيل</span>
-        <textarea name="delivery_address" rows="3" required
-                  placeholder="العنوان بالتفصيل (المحافظة، المنطقة، الشارع، علامة مميزة...)"
-                  class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">{{ delivery_address }}</textarea>
-      </label>
+          <!-- بيانات التوصيل -->
+          <section class="bg-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.05)] p-6">
+            <h2 class="font-bold text-primary-900 mb-4">بيانات التوصيل</h2>
 
-      <label class="block mb-4">
-        <span class="text-sm font-medium text-gray-700 mb-1 block">ملاحظات (اختياري)</span>
-        <textarea name="notes" rows="3" placeholder="أي تعليمات خاصة بالطلب..."
-                  class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">{{ notes }}</textarea>
-      </label>
-      <button type="submit" :disabled="submitting"
-              class="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition">
-        <span x-show="!submitting">تأكيد الطلب</span>
-        <span x-show="submitting" x-cloak>جارِ تأكيد الطلب...</span>
-      </button>
+            <label class="block mb-4">
+              <span class="text-sm font-medium text-gray-700 mb-1 block">اسم المستلم</span>
+              <input type="text" name="delivery_name" required value="{{ delivery_name }}"
+                     placeholder="اسم الشخص المستلم للطلب"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">
+            </label>
+
+            <label class="block mb-4">
+              <span class="text-sm font-medium text-gray-700 mb-1 block">رقم الهاتف</span>
+              <input type="tel" name="delivery_phone" required value="{{ delivery_phone }}"
+                     placeholder="رقم للتواصل عند التوصيل"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">
+            </label>
+
+            <label class="block mb-4">
+              <span class="text-sm font-medium text-gray-700 mb-1 block">عنوان التوصيل</span>
+              <textarea name="delivery_address" rows="3" required
+                        placeholder="العنوان بالتفصيل (المحافظة، المنطقة، الشارع، علامة مميزة...)"
+                        class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">{{ delivery_address }}</textarea>
+            </label>
+
+            <label class="block">
+              <span class="text-sm font-medium text-gray-700 mb-1 block">ملاحظات (اختياري)</span>
+              <textarea name="notes" rows="3" placeholder="أي تعليمات خاصة بالطلب..."
+                        class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary-400">{{ notes }}</textarea>
+            </label>
+          </section>
+
+        </div>
+
+        <!-- ملخص الطلب: كارت كحلي ثابت (Sticky) — نفس أسلوب تصميم Stitch.
+             معروض هنا "الإجمالي" بس (مفيش رسوم توصيل/خصم منفصلين لأنهم
+             مش محسوبين فعليًا في checkout view حاليًا) عشان الرقم المعروض
+             يفضل مطابق تمامًا للي هيتحسب فعليًا وقت إرسال الطلب. -->
+        <div class="lg:col-span-1">
+          <div class="bg-primary-900 text-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.15)] p-6 lg:sticky lg:top-24">
+            <h2 class="font-bold text-gold-400 mb-4 border-b border-white/10 pb-4">ملخص الطلب</h2>
+
+            <div class="space-y-2 text-sm text-primary-100 mb-4 max-h-56 overflow-y-auto">
+              {% for item in cart_items %}
+              <div class="flex justify-between gap-2">
+                <span class="truncate">{{ item.unit.product.name_ar }} × {{ item.quantity }}</span>
+                <span class="text-white font-semibold shrink-0">{{ item.subtotal }} ج.م</span>
+              </div>
+              {% endfor %}
+            </div>
+
+            <div class="border-t border-white/10 pt-4">
+              <div class="flex justify-between items-center mb-5">
+                <span class="font-bold">الإجمالي</span>
+                <span class="text-gold-400 text-xl font-bold">{{ total }} ج.م</span>
+              </div>
+              <button type="submit" :disabled="submitting"
+                      class="w-full bg-gold-500 hover:bg-gold-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                <span x-show="!submitting">تأكيد الطلب</span>
+                <span x-show="submitting" x-cloak>جارِ تأكيد الطلب...</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </form>
 </div>
 
