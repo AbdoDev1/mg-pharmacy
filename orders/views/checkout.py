@@ -27,7 +27,40 @@ def checkout(request):
     # (Order.is_below_min_order) بدل ما نمنع العميل من الإرسال خالص. المخزن
     # بعد كده يقدر يكمّل الطلب زي ما هو أو يضيف "مصاريف توصيل" لتغطية الفرق.
 
+    client_profile = getattr(request.user, 'client_profile', None)
+    # قيم افتراضية لحقول التوصيل — بتتاخد من بروفايل العميل لو متوفرة عشان
+    # مايضطرش يكتبها من الصفر كل مرة، لكن تفضل قابلة للتعديل هنا (ممكن
+    # يوصّل الطلب ده لعنوان تاني). لو البروفايل متعملوش عليه توثيق أصلًا
+    # (عنوان فاضي من فورم التسجيل المبسّط) هتفضل الحقول فاضية والعميل لازم
+    # يملاها يدويًا.
+    default_name = (client_profile.business_name if client_profile else '') or request.user.get_full_name() or request.user.username
+    default_phone = client_profile.phone if client_profile else ''
+    default_address = client_profile.address if client_profile else ''
+
     if request.method == 'POST':
+        delivery_name = request.POST.get('delivery_name', '').strip()
+        delivery_phone = request.POST.get('delivery_phone', '').strip()
+        delivery_address = request.POST.get('delivery_address', '').strip()
+
+        missing = []
+        if not delivery_name:
+            missing.append('اسم المستلم')
+        if not delivery_phone:
+            missing.append('رقم الهاتف')
+        if not delivery_address:
+            missing.append('عنوان التوصيل')
+
+        if missing:
+            messages.error(request, f'برجاء إدخال بيانات التوصيل الناقصة: {"، ".join(missing)}.')
+            return render(request, 'orders/checkout.html', {
+                'cart_items': items,
+                'total': total,
+                'delivery_name': delivery_name or default_name,
+                'delivery_phone': delivery_phone or default_phone,
+                'delivery_address': delivery_address or default_address,
+                'notes': request.POST.get('notes', ''),
+            })
+
         # ملحوظة: الطلب هنا لا يحجز ولا يخصم أي كمية من المخزون — بيتسجّل بس
         # في حالة "PENDING" لحد ما المخزن يراجعه ويأكده. الفحص تحت للكمية
         # المتاحة هو تنبيه للعميل بس (تجربة استخدام)، مش قفل فعلي على
@@ -58,6 +91,9 @@ def checkout(request):
                 client=request.user,
                 notes=request.POST.get('notes', ''),
                 min_order_amount_snapshot=min_order_amount or None,
+                delivery_name=delivery_name,
+                delivery_phone=delivery_phone,
+                delivery_address=delivery_address,
             )
             for item in items:
                 OrderItem.objects.create(
@@ -78,5 +114,8 @@ def checkout(request):
 
     return render(request, 'orders/checkout.html', {
         'cart_items': items,
-        'total': cart.get_total(),
+        'total': total,
+        'delivery_name': default_name,
+        'delivery_phone': default_phone,
+        'delivery_address': default_address,
     })

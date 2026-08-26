@@ -111,6 +111,16 @@ class Order(models.Model):
     notes       = models.TextField(blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
+    # بيانات التوصيل — بتتاخد من العميل في صفحة إتمام الطلب (checkout) بدل
+    # ما تتقفل على عنوان/هاتف بروفايل العميل بس، لأن العميل ممكن يحب يستلم
+    # الطلب ده بعنوان تاني (فرع تاني، عنوان مؤقت..) أو حتى بروفايله عنوانه
+    # فاضي أصلًا (اتسجّل من الفورم المبسّط في accounts.forms.RegisterForm
+    # اللي بيسيب address='' افتراضيًا). القيم دي snapshot ثابت وقت الطلب،
+    # زي min_order_amount_snapshot تمامًا — تغيير عنوان البروفايل بعد كده
+    # ما يأثرش على طلبات سابقة.
+    delivery_name    = models.CharField(max_length=255, blank=True, verbose_name='اسم المستلم')
+    delivery_phone   = models.CharField(max_length=20, blank=True, verbose_name='رقم هاتف التواصل')
+    delivery_address = models.TextField(blank=True, verbose_name='عنوان التوصيل')
     # بيتحدد True أول ما أي موظف/أدمن يفتح صفحة تفاصيل الطلب (staff:order_detail).
     # بيُستخدم في الصفحة الرئيسية للوحة التحكم لعرض عدد الطلبات "لسه ماتفتحتش"،
     # عشان الموظف يعرف بسرعة إيه الجديد من غير ما يفوّته وسط باقي الطلبات.
