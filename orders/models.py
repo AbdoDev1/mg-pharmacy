@@ -1,7 +1,8 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db import transaction
 from django.utils import timezone
-from accounts.models import User
+from accounts.models import User, Address
 from products.models import ProductUnit
 
 
@@ -893,3 +894,73 @@ class OrderLog(models.Model):
 
     def __str__(self):
         return f'{self.get_event_display()} — طلب #{self.order_id}'
+
+
+class PrescriptionRequest(models.Model):
+    """
+    طلب "رفع روشتة" من العميل — بيبدأ كصورة/وصف نصي من غير أصناف محددة
+    (المخزن هو اللي بيراجع الروشتة ويحدد الأصناف المطلوبة فعليًا)، ولذلك
+    مفيش OrderItems مرتبطة بيه من البداية. تحويله لـ Order حقيقي (مع فحص
+    توفر كل صنف حسب unavailable_policy) ده شغل مرحلة تالية منفصلة —
+    شاشة مراجعة عند المخزن لسه محتاجة نتفق على تصميمها.
+    """
+    class UnavailablePolicy(models.TextChoices):
+        SUBSTITUTE = 'SUBSTITUTE', 'اختيار بديل إن وجد'
+        PARTIAL    = 'PARTIAL',    'توصيل الطلب بدون المنتج الناقص'
+        CANCEL     = 'CANCEL',     'إلغاء الطلب بالكامل'
+
+    class Status(models.TextChoices):
+        PENDING    = 'PENDING',    'قيد المراجعة'
+        PROCESSING = 'PROCESSING', 'جاري التجهيز'
+        FULFILLED  = 'FULFILLED',  'تم التحويل لطلب'
+        CANCELLED  = 'CANCELLED',  'ملغاة'
+
+    client = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='prescription_requests',
+    )
+    address = models.ForeignKey(
+        Address, on_delete=models.PROTECT, related_name='prescription_requests',
+        verbose_name='عنوان التوصيل',
+    )
+    image = models.ImageField(
+        upload_to='prescriptions/%Y/%m/', blank=True, null=True,
+        verbose_name='صورة الروشتة',
+    )
+    text_description = models.TextField(
+        blank=True, verbose_name='اسم الدواء أو وصف الطلب كتابةً',
+    )
+    unavailable_policy = models.CharField(
+        max_length=20, choices=UnavailablePolicy.choices,
+        default=UnavailablePolicy.PARTIAL,
+        verbose_name='لو صنف مش متوفر',
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING,
+    )
+    resulting_order = models.ForeignKey(
+        Order, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='prescription_request',
+    )
+    staff_notes = models.TextField(blank=True, verbose_name='ملاحظات المخزن')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'طلب روشتة'
+        verbose_name_plural = 'طلبات الروشتات'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'روشتة #{self.pk} — {self.client}'
+
+    def clean(self):
+        if not self.image and not self.text_description.strip():
+            raise ValidationError('لازم صورة روشتة أو وصف كتابي للطلب على الأقل.')
+
+    def save(self, *args, **kwargs):
+        # نفس نمط Order.save() (فوق في نفس الملف): إشعار للمخزن بس أول
+        # مرة يتحفظ فيها الطلب (is_new)، مش على أي تعديل تاني بعد كده.
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new:
+            from orders.notifications import notify_new_prescription_request
+            notify_new_prescription_request(self)

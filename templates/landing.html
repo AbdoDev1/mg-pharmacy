@@ -58,7 +58,7 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
     </div>
 
     <!-- Trust badges — قيم عامة وصفية، مفيش أي رقم أو إحصائية بنّدعيها هنا. -->
-    <div class="max-w-7xl mx-auto px-4 pb-10">
+    <div class="max-w-7xl mx-auto px-4 pb-6">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div class="bg-white/10 rounded-xl p-4 text-center">
                 <p class="font-bold text-sm mb-0.5">توصيل سريع</p>
@@ -78,6 +78,29 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
             </div>
         </div>
     </div>
+
+    <!-- زرار "طلب روشتة" — بقى فعّال ومربوط بصفحة حقيقية (orders:prescription_upload).
+         زرار "العروض" لسه placeholder غير فعّال (Phase منفصلة لاحقًا لم يتفق
+         عليها بعد) — باقي زي ما هو: مفيش href حقيقي، disabled فعليًا
+         (pointer-events-none)، وبادچ "قريبًا" واضح. -->
+    <div class="max-w-7xl mx-auto px-4 pb-10">
+        <div class="grid grid-cols-2 gap-3 max-w-md mx-auto">
+            <a href="{% url 'orders:prescription_upload' %}" class="relative bg-white/10 rounded-xl p-4 text-center hover:bg-white/20 transition">
+                <svg class="w-5 h-5 mx-auto mb-1 text-gold-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/>
+                </svg>
+                <p class="font-bold text-xs">طلب روشتة</p>
+            </a>
+            <div class="relative bg-white/10 rounded-xl p-4 text-center opacity-60 pointer-events-none select-none" aria-disabled="true">
+                <span class="absolute top-1.5 left-1.5 bg-gold-500 text-primary-900 text-[9px] font-bold px-1.5 py-0.5 rounded-full">قريبًا</span>
+                <svg class="w-5 h-5 mx-auto mb-1 text-gold-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.83.699 2.528 0l4.318-4.318a1.79 1.79 0 000-2.528l-9.581-9.581A2.25 2.25 0 009.568 3z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z"/>
+                </svg>
+                <p class="font-bold text-xs">العروض</p>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- تسوق حسب الفئة — نفس مصدر ونمط كروت Phase 4 بالظبط (نفس الأيقونة
@@ -93,8 +116,8 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
         {% for cat in categories|slice:":6" %}
         <a href="{% url 'store:home' %}?category={{ cat.slug }}"
-           class="flex flex-col items-center gap-2 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-4 text-center">
-            <div class="w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center overflow-hidden shrink-0">
+           class="flex flex-col items-center gap-2 bg-white border border-gray-100 rounded-card shadow-soft hover:shadow-md hover:-translate-y-0.5 hover:border-gold-400 transition p-4 text-center">
+            <div class="w-14 h-14 rounded-full bg-chip flex items-center justify-center overflow-hidden shrink-0">
                 {% if cat.image %}
                 <img src="{% if cat.image.thumbnail %}{{ cat.image.thumbnail.url }}{% else %}{{ cat.image.image.url }}{% endif %}"
                      alt="{{ cat.name }}" loading="lazy" class="w-full h-full object-cover">
@@ -152,7 +175,7 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
             فعّالة)، بدل ما الكروت تتفاوت في الطول وتبوّظ ترصيص الصفوف.
             {% endcomment %}
             <a href="{% url 'store:product_detail' product.pk %}"
-               class="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition p-3 relative flex flex-col h-full">
+               class="bg-white border border-gray-100 rounded-card shadow-soft hover:shadow-md hover:-translate-y-0.5 hover:border-gold-400 transition p-3 relative flex flex-col h-full">
                 {% if request.user.is_authenticated and unit %}
                     {% with discount_percent=unit|discount_percent_for_client:request.user %}
                     {% if site_config.show_discounted_prices and discount_percent > 0 %}
@@ -259,47 +282,5 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         </div>
     </div>
 </div>
-
-<!-- Footer مخصص لصفحة الهبوط بس (base.html مفيهوش footer عام حاليًا،
-     فمفيش تأثير على باقي صفحات الموقع). كل الروابط هنا حقيقية وموجودة
-     فعلًا — مفيش رابط "العروض"/"تواصل معنا" وهمي بيودّي لصفحة مش موجودة. -->
-<footer class="bg-primary-800 text-primary-100">
-    <div class="max-w-7xl mx-auto px-4 py-10">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-8">
-            <div>
-                <h3 class="text-white font-bold mb-3">MG Pharmacy</h3>
-                <p class="text-sm leading-loose text-primary-200">
-                    صيدليتك الأقرب إليك. نوفر الأدوية والمستلزمات الطبية
-                    ومنتجات العناية والصحة في تجربة شراء إلكترونية سهلة.
-                </p>
-            </div>
-            <div>
-                <h3 class="text-white font-bold mb-3">روابط سريعة</h3>
-                <div class="flex flex-col gap-2 text-sm">
-                    <a href="{% url 'store:home' %}" class="hover:text-white transition">المتجر</a>
-                    {% if request.user.is_authenticated and request.user.role == 'CLIENT' %}
-                        <a href="{% url 'orders:order_list' %}" class="hover:text-white transition">طلباتي</a>
-                        <a href="{% url 'accounts:dashboard' %}" class="hover:text-white transition">حسابي</a>
-                    {% else %}
-                        <a href="{% url 'accounts:login' %}" class="hover:text-white transition">تسجيل الدخول</a>
-                        <a href="{% url 'accounts:register' %}" class="hover:text-white transition">إنشاء حساب جديد</a>
-                    {% endif %}
-                </div>
-            </div>
-            <div>
-                <h3 class="text-white font-bold mb-3">الأقسام</h3>
-                <div class="flex flex-col gap-2 text-sm">
-                    {% for cat in categories|slice:":4" %}
-                    <a href="{% url 'store:home' %}?category={{ cat.slug }}" class="hover:text-white transition">{{ cat.name }}</a>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        <div class="border-t border-white/10 pt-4 flex flex-col sm:flex-row justify-between gap-2 text-xs text-primary-300">
-            <span>© MG Pharmacy — جميع الحقوق محفوظة</span>
-            <span>نحن أقرب إليك</span>
-        </div>
-    </div>
-</footer>
 
 {% endblock %}

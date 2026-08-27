@@ -26,7 +26,7 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
 
       <!-- كارت المنتج المدمج -->
       <div class="lg:col-span-4 lg:sticky lg:top-6">
-        <div class="bg-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.05)] p-4">
+        <div class="bg-white rounded-card shadow-soft p-4">
 
           <!-- صورة -->
           <div class="w-full sm:max-w-[200px] sm:mx-auto mb-4">
@@ -148,7 +148,7 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         {% include "store/partials/related_products_carousel.html" with products=similar_products heading="منتجات مشابهة" %}
         {% include "store/partials/related_products_carousel.html" with products=complementary_products heading="غالبًا ما يُطلب معه" %}
         {% if not similar_products and not complementary_products %}
-        <div class="bg-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.05)] p-6 text-center">
+        <div class="bg-white rounded-card shadow-soft p-6 text-center">
           <p class="text-gray-500 text-sm mb-3">مفيش منتجات مقترحة لهذا الصنف حاليًا</p>
           <a href="{% url 'store:home' %}?category={{ product.category.slug }}"
              class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm px-4 py-2 rounded-lg transition">

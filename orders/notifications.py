@@ -24,6 +24,23 @@ def notify_new_order(order):
     )
 
 
+def notify_new_prescription_request(prescription):
+    """
+    روشتة جديدة اترفعت — إشعار لكل موظف عنده صلاحية عرض الطلبات (نفس
+    صلاحية orders.view_order، مفيش صلاحية منفصلة لطلبات الروشتات لحد
+    دلوقتي). الرابط بيوديك لصفحة الأدمن لحد ما تتبنى شاشة مراجعة مخصصة
+    للمخزن (المرحلة الجاية).
+    """
+    notify_staff_with_perm(
+        'orders.view_order',
+        kind=Notification.Kind.NEW_PRESCRIPTION_REQUEST,
+        title=f'طلب روشتة جديد #{prescription.pk}',
+        message=f'وصل طلب روشتة جديد من العميل {prescription.client.username}.',
+        url_name='admin:orders_prescriptionrequest_change',
+        url_kwargs={'object_id': prescription.pk},
+    )
+
+
 def notify_status_change(order, actor):
     """
     تغيّرت حالة الطلب — بنبعت الإشعار المناسب حسب الحالة الجديدة:

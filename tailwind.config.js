@@ -46,6 +46,19 @@ module.exports = {
         surface: {
           page: '#e7eaf1',
         },
+        // Phase 6 (Stitch design import — أغسطس 2026): خلفية "Sterile" الفاتحة
+        // من DESIGN.md (#E6F0F8) — مستخدمة في شرائط الفئات/الـ chips وحد
+        // الهيدر السفلي بدل الشادو. اسم منفصل عشان منلمسش primary/gold.
+        chip: '#E6F0F8',
+      },
+      boxShadow: {
+        // ظل محيطي خفيف جدًا من DESIGN.md لكروت المنتجات/المودالز —
+        // بديل الشادوهات الغامقة الافتراضية.
+        soft: '0px 4px 20px rgba(10, 29, 68, 0.05)',
+      },
+      borderRadius: {
+        // نصف قطر الحاويات (كروت المنتجات والمحتوى الرئيسي) من DESIGN.md
+        card: '1rem',
       },
     },
   },

@@ -1,0 +1,16 @@
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('notifications', '0007_notification_import_committed_kind'),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name='notification',
+            name='kind',
+            field=models.CharField(choices=[('NEW_ORDER', 'طلب جديد'), ('ORDER_NEEDS_APPROVAL', 'طلب يحتاج موافقتك على تعديل'), ('ORDER_CONFIRMED', 'تم تأكيد الطلب'), ('ORDER_REJECTED', 'تم رفض الطلب'), ('ORDER_DELIVERED', 'تم تسليم الطلب'), ('CLIENT_APPROVED_AMENDMENT', 'العميل وافق على التعديل'), ('CLIENT_REJECTED_AMENDMENT', 'العميل رفض التعديل'), ('NEW_CLIENT_REGISTRATION', 'طلب تسجيل عميل جديد'), ('NEW_ARRIVALS', 'وارد جديد في المتجر'), ('PAYMENT_RECEIVED', 'تم تسجيل دفعة على حسابك'), ('RETURN_CREATED', 'تم تسجيل مرتجع على طلبك'), ('BACKUP_FAILED', 'فشل النسخ الاحتياطي'), ('IMPORT_READY', 'نتيجة معالجة ملف الاستيراد'), ('IMPORT_COMMITTED', 'نتيجة حفظ الاستيراد'), ('NEW_PRESCRIPTION_REQUEST', 'طلب روشتة جديد')], max_length=40),
+        ),
+    ]

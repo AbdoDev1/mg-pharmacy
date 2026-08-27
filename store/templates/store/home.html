@@ -69,8 +69,8 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
     <div class="flex md:grid md:grid-cols-6 gap-3 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 md:overflow-visible">
         {% for cat in categories|slice:":6" %}
         <a href="{% url 'store:home' %}?category={{ cat.slug }}#product-grid"
-           class="shrink-0 w-28 md:w-auto flex flex-col items-center gap-2 bg-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.05)] hover:shadow-[0_6px_15px_rgba(7,28,66,0.1)] hover:-translate-y-0.5 transition-all p-3 text-center {% if selected_category == cat.slug %}ring-2 ring-gold-500{% endif %}">
-            <div class="w-14 h-14 rounded-full bg-primary-50 flex items-center justify-center overflow-hidden shrink-0">
+           class="shrink-0 w-28 md:w-auto flex flex-col items-center gap-2 bg-white rounded-card shadow-soft hover:shadow-md hover:-translate-y-0.5 hover:border-gold-400 transition-all p-3 text-center {% if selected_category == cat.slug %}ring-2 ring-gold-500{% endif %}">
+            <div class="w-14 h-14 rounded-full bg-chip flex items-center justify-center overflow-hidden shrink-0">
                 {% if cat.image %}
                 <img src="{% if cat.image.thumbnail %}{{ cat.image.thumbnail.url }}{% else %}{{ cat.image.image.url }}{% endif %}"
                      alt="{{ cat.name }}" loading="lazy" class="w-full h-full object-cover">

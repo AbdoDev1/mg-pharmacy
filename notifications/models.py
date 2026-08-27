@@ -33,6 +33,9 @@ class Notification(models.Model):
         # بس) عشان الموظف يقدر يميّز الإشعارين لو الاتنين وصلوا قريب من
         # بعض. راجع products/tasks.py — commit_import_batch_task.
         IMPORT_COMMITTED = 'IMPORT_COMMITTED', 'نتيجة حفظ الاستيراد'
+        # طلب "رفع روشتة" جديد من عميل — راجع orders/notifications.py
+        # (notify_new_prescription_request) وorders/views/prescription.py.
+        NEW_PRESCRIPTION_REQUEST = 'NEW_PRESCRIPTION_REQUEST', 'طلب روشتة جديد'
 
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
     kind = models.CharField(max_length=40, choices=Kind.choices)

@@ -4,7 +4,7 @@
 {% with unit=units.0 %}
 {% with inv=product.inventory %}
 
-<div class="bg-white rounded-xl shadow-[0_4px_10px_rgba(7,28,66,0.05)] hover:shadow-[0_6px_15px_rgba(7,28,66,0.1)] hover:-translate-y-0.5 transition-all border border-gray-100 overflow-hidden group relative">
+<div class="bg-white rounded-card shadow-soft hover:shadow-md hover:-translate-y-0.5 hover:border-gold-400 transition-all border border-gray-100 overflow-hidden group relative">
 
   {# شارة "وارد جديد" — للعميل المسجّل دخوله بس، مش لأي زائر #}
   {% if product.is_new_arrival and request.user.is_authenticated and request.user.role == 'CLIENT' %}

@@ -1,5 +1,15 @@
 from django.contrib import admin
-from .models import Order, OrderItem, OrderLog, SiteConfig, Cart, CartItem
+from .models import Order, OrderItem, OrderLog, PrescriptionRequest, SiteConfig, Cart, CartItem
+
+
+@admin.register(PrescriptionRequest)
+class PrescriptionRequestAdmin(admin.ModelAdmin):
+    # مراجعة يدوية من الأدمن مؤقتًا لحد ما تتبنى شاشة مراجعة مخصصة
+    # للمخزن (المرحلة الجاية).
+    list_display = ('id', 'client', 'status', 'unavailable_policy', 'created_at')
+    list_filter = ('status', 'unavailable_policy')
+    search_fields = ('id', 'client__username', 'client__client_profile__business_name')
+    readonly_fields = ('created_at',)
 
 
 class CartItemInline(admin.TabularInline):

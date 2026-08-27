@@ -2,7 +2,14 @@ from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import User, Employee, ClientProfile
+from .models import User, Employee, ClientProfile, Address
+
+
+@admin.register(Address)
+class AddressAdmin(admin.ModelAdmin):
+    list_display = ('id', 'client', 'label', 'is_default', 'created_at')
+    list_filter = ('is_default',)
+    search_fields = ('client__username', 'label', 'full_address')
 
 
 # =====================================================================

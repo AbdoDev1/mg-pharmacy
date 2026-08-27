@@ -159,3 +159,42 @@ class ClientProfile(models.Model):
 
     def __str__(self):
         return f"{self.business_name} - {self.user.username}"
+
+
+class Address(models.Model):
+    """
+    دفتر عناوين العميل — عنوان أو أكتر لكل عميل، يختار منه وقت أي عملية
+    محتاجة عنوان توصيل (زي رفع روشتة). ده منفصل عن ClientProfile.address
+    (العنوان الافتراضي القديم اللي بيتاخد وقت الـ checkout العادي) —
+    متلمسناهوش عشان مايبوظش أي حاجة شغالة عليه، ودفتر العناوين ده إضافة
+    جنبه للاستخدامات اللي محتاجة أكتر من عنوان واحد.
+    """
+    client = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='addresses',
+    )
+    label = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='اسم العنوان',
+        help_text='مثلاً: المنزل، الشغل (اختياري)',
+    )
+    full_address = models.TextField(verbose_name='العنوان بالتفصيل')
+    is_default = models.BooleanField(default=False, verbose_name='العنوان الافتراضي')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+        verbose_name = 'عنوان'
+        verbose_name_plural = 'العناوين'
+
+    def __str__(self):
+        return self.label or self.full_address[:40]
+
+    def save(self, *args, **kwargs):
+        # عنوان افتراضي واحد بس لكل عميل — لو اتحدد ده كافتراضي، شيل
+        # الصفة من أي عنوان تاني للعميل نفسه.
+        super().save(*args, **kwargs)
+        if self.is_default:
+            Address.objects.filter(client=self.client).exclude(pk=self.pk).update(is_default=False)
