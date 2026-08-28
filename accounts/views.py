@@ -173,9 +173,10 @@ def dashboard_view(request):
 
     # تبويب "طلباتي" هنا بيعرض حركة المرتجع جنب الطلبات (زي orders:order_list
     # بالظبط) — راجع merge_orders_with_returns لتفاصيل الدمج والترتيب.
-    orders_rows = merge_orders_with_returns(orders_qs, request.user)
-    orders_paginator = Paginator(orders_rows, ORDERS_TAB_PAGE_SIZE)
-    orders_page_obj = orders_paginator.get_page(request.GET.get('orders_page'))
+    orders_qs = Order.objects.filter(client=request.user)
+    orders_page_obj = merge_orders_with_returns(
+        orders_qs, request.user, page=request.GET.get('orders_page'), page_size=ORDERS_TAB_PAGE_SIZE
+    )
 
     return render(request, 'accounts/dashboard.html', {
         'balance': balance,

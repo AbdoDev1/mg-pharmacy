@@ -18,7 +18,8 @@
      على import_products_status، وأول ما النتيجة تجهز بتحوّل تلقائيًا
      لشاشة المراجعة. لو الموظف قفل التاب أو غيّر صفحة، هيلاقي إشعار في
      الجرس برضه (راجع products/tasks.py — notify()). -->
-<div class="bg-white rounded-2xl shadow-sm p-8 max-w-lg mx-auto text-center">
+<div class="bg-white rounded-2xl shadow-sm p-8 max-w-lg mx-auto text-center"
+     x-data="importProcessingView()">
     <h1 class="text-xl font-bold text-gray-800 mb-2">جاري معالجة الملف…</h1>
     <p class="text-sm text-gray-500 mb-6">
         بنقرأ الملف ونصنّف كل صف — الصفحة هتنتقل لوحدها لما تخلص. تقدر
@@ -40,21 +41,29 @@
 </style>
 
 <script>
-    (function () {
-        var statusUrl = "{% url 'staff:import_products_status' %}";
-        var reviewUrl = "{% url 'staff:import_products_review' %}";
-        var poll = setInterval(function () {
-            fetch(statusUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                .then(function (res) { return res.json(); })
-                .then(function (data) {
-                    if (data.ready) {
-                        clearInterval(poll);
-                        window.location.href = reviewUrl;
-                    }
-                })
-                .catch(function () { /* هيحاول تاني في الدورة الجاية */ });
-        }, 2000);
-    })();
+function importProcessingView() {
+    return {
+        pollTimer: null,
+        statusUrl: "{% url 'staff:import_products_status' %}",
+        reviewUrl: "{% url 'staff:import_products_review' %}",
+        init() {
+            this.pollTimer = setInterval(() => {
+                fetch(this.statusUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ready) {
+                            clearInterval(this.pollTimer);
+                            window.location.href = this.reviewUrl;
+                        }
+                    })
+                    .catch(() => { /* هيحاول تاني في الدورة الجاية */ });
+            }, 2000);
+        },
+        destroy() {
+            clearInterval(this.pollTimer);
+        }
+    };
+}
 </script>
 
 {% endblock %}

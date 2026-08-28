@@ -8,7 +8,7 @@ from django.db import transaction
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 
-from invoices.models import InvoiceReversal
+from invoices.models import merge_orders_with_returns_for_staff
 from orders.models import Order, OrderItem
 from staff.permissions import perm_required
 from tags.services import tags_for_many
@@ -21,29 +21,21 @@ ITEMS_PER_DETAIL_PAGE = 20  # ترقيم صفحات جدول الأصناف في
 @perm_required('orders.view_order')
 def order_list(request):
     status = request.GET.get('status', '')
-    orders = Order.objects.select_related('client').prefetch_related('items')
-
-    if status:
-        orders = orders.filter(status=status)
+    orders = Order.objects.filter(status=status) if status else Order.objects.all()
 
     # إشعارات المرتجع بتتحط في نفس قائمة الطلبات كصف مستقل (رقم الإشعار،
     # العميل، القيمة، التاريخ) — من غير تفاصيل الأصناف المرتجعة (دي موجودة
     # في صفحة طباعة الإشعار نفسها لو الستاف عايز يفتحها). بتظهر بس في تبويب
     # "الكل" لأن حالات الطلب (PENDING/CONFIRMED/...) مش منطبقة على إشعار مرتجع.
-    rows = [{'kind': 'order', 'obj': order, 'created_at': order.created_at} for order in orders]
-    if not status:
-        reversals = InvoiceReversal.objects.select_related(
-            'invoice__order__client',
-        )
-        rows += [
-            {'kind': 'return', 'obj': reversal, 'created_at': reversal.created_at}
-            for reversal in reversals
-        ]
-
-    rows.sort(key=lambda row: row['created_at'], reverse=True)
-
-    paginator = Paginator(rows, STAFF_LIST_PAGE_SIZE)
-    page_obj = paginator.get_page(request.GET.get('page'))
+    #
+    # الدمج والترتيب والترقيم بيحصلوا على مستوى قاعدة البيانات (union) جوه
+    # merge_orders_with_returns_for_staff، مش بتحميل كل الطلبات والمرتجعات
+    # في الذاكرة وترتيبهم بايثون زي الكود القديم — ده كان بيبطّئ الصفحة (أو
+    # يوقفها تمامًا) مع نمو عدد الطلبات بمرور الوقت.
+    page_obj = merge_orders_with_returns_for_staff(
+        orders, include_returns=not status,
+        page=request.GET.get('page'), page_size=STAFF_LIST_PAGE_SIZE,
+    )
 
     # وسم كل طلب في الصفحة الحالية باستعلام واحد بدل ما نستدعي tags_for
     # لكل صف على حدة (N+1) — الوسوم بتتعرض صغيرة تحت رقم الطلب في الجدول.

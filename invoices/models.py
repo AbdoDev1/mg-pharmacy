@@ -446,22 +446,132 @@ class InvoiceReversal(models.Model):
         ).select_related('invoice__order')
 
 
-def merge_orders_with_returns(orders_qs, client):
+def _merge_and_paginate_order_return_rows(
+    orders_qs, reversals_qs, page=1, page_size=20,
+    order_hydrate_qs=None, reversal_hydrate_qs=None,
+):
+    """
+    الأساس المشترك اللي بتبني عليه merge_orders_with_returns (تبويب "طلباتي"
+    الخاص بعميل واحد) وmerge_orders_with_returns_for_staff (قائمة الستاف
+    الكاملة لكل العملاء): بيدمج orders_qs مع reversals_qs في قائمة واحدة
+    مرتبة بالتاريخ (الأحدث فوق) على مستوى قاعدة البيانات باستخدام union +
+    index خفيف، وبيرقّم الصفحات على الـindex ده بس *قبل* تحميل أي كائن
+    فعلي — بعدين بيحمّل كائنات صفحة واحدة بس (مش كل الجدول).
+
+    order_hydrate_qs / reversal_hydrate_qs: queryset (بدون فلتر pk) بتُستخدم
+    لتحميل الكائنات الفعلية لصفوف الصفحة الحالية — تسمح لكل استدعاء يحدد
+    select_related/prefetch_related المناسبة له (عميل واحد غير محتاج
+    select_related('client') مثلًا، أما قائمة الستاف محتاجاها). لو None
+    بيستخدم Order.objects.all() / InvoiceReversal.objects.all() بسيطة.
+
+    بترجّع Page object فيه صفوف dict كل واحد له 'kind' ('order' أو 'return')
+    و'obj' و'created_at'.
+    """
+    from django.core.paginator import Page, Paginator
+    from django.db.models import CharField, F, IntegerField, Value
+
+    # إزالة أي prefetch أو ordering محدد على مستوى الـ Subquery لمنع مشاكل الـ Compound Statements
+    clean_orders_qs = orders_qs.order_by()
+
+    order_indexes = clean_orders_qs.annotate(
+        kind=Value('order', output_field=CharField()),
+        source_id=F('pk'),
+        source_rank=Value(0, output_field=IntegerField()),
+    ).values('kind', 'source_id', 'source_rank', 'created_at')
+
+    clean_reversals_qs = reversals_qs.order_by()
+
+    return_indexes = clean_reversals_qs.annotate(
+        kind=Value('return', output_field=CharField()),
+        source_id=F('pk'),
+        source_rank=Value(1, output_field=IntegerField()),
+    ).values('kind', 'source_id', 'source_rank', 'created_at')
+
+    combined_indexes = order_indexes.union(return_indexes, all=True).order_by(
+        '-created_at', 'source_rank', '-source_id'
+    )
+
+    paginator = Paginator(combined_indexes, page_size)
+    index_page = paginator.get_page(page)
+
+    order_ids = [
+        item['source_id'] for item in index_page.object_list
+        if item['kind'] == 'order'
+    ]
+    return_ids = [
+        item['source_id'] for item in index_page.object_list
+        if item['kind'] == 'return'
+    ]
+
+    from orders.models import Order
+    base_order_qs = order_hydrate_qs if order_hydrate_qs is not None else Order.objects.all()
+    base_reversal_qs = reversal_hydrate_qs if reversal_hydrate_qs is not None else InvoiceReversal.objects.all()
+
+    orders_by_id = {
+        order.pk: order
+        for order in base_order_qs.filter(pk__in=order_ids)
+    }
+    reversals_by_id = {
+        reversal.pk: reversal
+        for reversal in base_reversal_qs.filter(pk__in=return_ids)
+    }
+
+    rows = []
+    for item in index_page.object_list:
+        if item['kind'] == 'order':
+            obj = orders_by_id.get(item['source_id'])
+            if obj:
+                rows.append({'kind': 'order', 'obj': obj, 'created_at': item['created_at']})
+        else:
+            obj = reversals_by_id.get(item['source_id'])
+            if obj:
+                rows.append({'kind': 'return', 'obj': obj, 'created_at': item['created_at']})
+
+    return Page(rows, index_page.number, paginator)
+
+
+def merge_orders_with_returns(orders_qs, client, page=1, page_size=20):
     """
     بتدمج قائمة طلبات عميل مع إشعارات المرتجع بتاعته في قائمة واحدة مرتبة
-    بالتاريخ (الأحدث فوق) — كل عنصر dict فيه 'kind' ('order' أو 'return')
-    و'obj' و'created_at'. مستخدمة في أكتر من مكان (orders:order_list
-    وتبويب "طلباتي" في accounts:dashboard) عشان العميل يشوف حركة المرتجع
-    في نفس قائمة طلباته، من غير تفاصيل الأصناف (زي أي طلب في القائمة) —
-    تفاصيل الإشعار نفسه موجودة في صفحة طباعته لو حبّ يفتحها.
+    بالتاريخ (الأحدث فوق) — راجع _merge_and_paginate_order_return_rows
+    للتفاصيل. مستخدمة في أكتر من مكان (orders:order_list وتبويب "طلباتي"
+    في accounts:dashboard) — سياق عميل واحد بس.
     """
-    rows = [{'kind': 'order', 'obj': order, 'created_at': order.created_at} for order in orders_qs]
-    rows += [
-        {'kind': 'return', 'obj': reversal, 'created_at': reversal.created_at}
-        for reversal in InvoiceReversal.rows_for_client(client)
-    ]
-    rows.sort(key=lambda row: row['created_at'], reverse=True)
-    return rows
+    from orders.models import Order
+
+    reversals_qs = InvoiceReversal.objects.filter(invoice__order__client=client)
+    return _merge_and_paginate_order_return_rows(
+        orders_qs, reversals_qs, page=page, page_size=page_size,
+        order_hydrate_qs=Order.objects.prefetch_related('items'),
+        reversal_hydrate_qs=InvoiceReversal.objects.select_related('invoice__order'),
+    )
+
+
+def merge_orders_with_returns_for_staff(orders_qs, include_returns=True, page=1, page_size=30):
+    """
+    نسخة لوحة الستاف من merge_orders_with_returns — بتغطي طلبات كل العملاء
+    (مش عميل واحد)، فمحتاجة reversals_qs عام بدل الفلترة بعميل معيّن.
+    مستخدمة في staff:order_list (staff/views/orders.py) بدل التحميل الكامل
+    القديم لكل الطلبات والمرتجعات في الذاكرة وترتيبهم يدويًا بايثون — ده كان
+    بيبطّئ الصفحة تدريجيًا (وممكن يوقفها تمامًا) مع نمو عدد الطلبات، بالظبط
+    زي المشكلة الأصلية اللي merge_orders_with_returns اتعمل عشان يحلها.
+
+    include_returns=False (لما فلتر status مفعّل في staff:order_list) بيرجّع
+    الطلبات بس من غير مرتجعات — نفس سلوك الكود القديم (المرتجعات بتظهر بس
+    في تبويب "الكل" لأن حالات الطلب مش منطبقة على إشعار مرتجع).
+    """
+    from orders.models import Order
+
+    if include_returns:
+        reversals_qs = InvoiceReversal.objects.all()
+    else:
+        reversals_qs = InvoiceReversal.objects.none()
+
+    return _merge_and_paginate_order_return_rows(
+        orders_qs, reversals_qs, page=page, page_size=page_size,
+        order_hydrate_qs=Order.objects.select_related('client').prefetch_related('items'),
+        reversal_hydrate_qs=InvoiceReversal.objects.select_related('invoice__order__client'),
+    )
 
 
 class InvoiceReversalItem(models.Model):
