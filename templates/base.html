@@ -198,6 +198,26 @@
     </div>
 </nav>
 
+<!-- شريط تنقل ثانوي (الرئيسية/المتجر) — عشان العميل/الزائر يقدر يرجع
+     لصفحة الهبوط بسهولة بدل ما يفضل عالق في المتجر من غير رابط رجوع
+     (الشعار واللوجو فوق بيوديّ للمتجر مباشرة، مش لصفحة الهبوط). مختفي
+     تمامًا عن ADMIN/WAREHOUSE لأن "/" بترجعهم للوحة التحكم مباشرة أصلًا
+     (راجع config/urls.py:home())، فالتاب هيبقى بلا معنى ليهم. -->
+{% if not request.user.is_authenticated or request.user.role == 'CLIENT' %}
+<div class="bg-white border-b border-gray-200 sticky top-[57px] z-40">
+    <div class="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto">
+        <a href="{% url 'home' %}"
+           class="shrink-0 px-4 py-2.5 text-sm font-bold border-b-2 transition {% if request.path == '/' %}border-gold-500 text-primary-800{% else %}border-transparent text-gray-500 hover:text-primary-700{% endif %}">
+            الرئيسية
+        </a>
+        <a href="{% url 'store:home' %}"
+           class="shrink-0 px-4 py-2.5 text-sm font-bold border-b-2 transition {% if request.path|slice:':7' == '/store/' %}border-gold-500 text-primary-800{% else %}border-transparent text-gray-500 hover:text-primary-700{% endif %}">
+            المتجر
+        </a>
+    </div>
+</div>
+{% endif %}
+
 <!-- main landmark: صفحة الويب من غيره بتظهر في تدقيق الوصولية (accessibility)
      كـ "Document does not have a main landmark" — بيصعّب على مستخدمي قارئ
      الشاشة إنهم يقفزوا لمحتوى الصفحة الأساسي من غير ما يمروا على الناف بار

@@ -94,6 +94,66 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
 <h2 class="sr-only">تصفح المنتجات</h2>
 {% endif %}
 
+<!-- منتجات مختارة — نفس فكرة قسم "أقوى العروض" في التصميم المقترَح، لكن
+     بمنتجات حقيقية بدل نسب خصم وهمية (مفيش ميزة عروض فعلية في المشروع
+     لسه). بتظهر بس في العرض الافتراضي (من غير بحث/فلتر) عشان ماتتكررش
+     بشكل غريب مع نتائج بحث محدودة. -->
+<!-- منتجات مختارة — نفس فكرة قسم "أقوى العروض" في التصميم المقترَح، لكن
+     بمنتجات حقيقية بدل نسب خصم وهمية (مفيش ميزة عروض فعلية في المشروع
+     لسه). بتظهر بس في العرض الافتراضي (من غير بحث/فلتر) عشان ماتتكررش
+     بشكل غريب مع نتائج بحث محدودة. سلايد ماراكي CSS بحت (زي نفس القسم
+     في landing.html) — من غير أي JavaScript ومن غير أي حمل إضافي على
+     السيرفر، المنتجات بتترسم مرة واحدة بس مع الصفحة. -->
+{% load cart_tags %}
+{% if products|length >= 2 and not selected_category and not selected_manufacturer and not search_q %}
+<style>
+@keyframes mg-marquee-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+.mg-marquee-track {
+    animation: mg-marquee-scroll 30s linear infinite;
+}
+.mg-marquee-track:hover {
+    animation-play-state: paused;
+}
+</style>
+<div class="pt-8 overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 mb-4">
+        <h2 class="text-lg font-bold text-primary-900">منتجات مختارة</h2>
+    </div>
+    <div class="overflow-hidden">
+        {% with spotlight=products|slice:':5' %}
+        <div class="mg-marquee-track flex gap-4 w-max">
+            {% for product in spotlight|add:spotlight %}
+            {% with units=product|units_for_client:request.user %}{% with unit=units.0 %}
+            <a href="{% url 'store:product_detail' product.pk %}"
+               class="w-40 shrink-0 bg-white border border-gray-100 rounded-card shadow-soft hover:shadow-md hover:border-gold-400 transition p-3 flex flex-col">
+                <div class="aspect-square bg-gray-50 rounded-xl overflow-hidden flex items-center justify-center mb-2">
+                    {% if product.image %}
+                        <img src="{% if product.image.thumbnail %}{{ product.image.thumbnail.url }}{% else %}{{ product.image.image.url }}{% endif %}"
+                             alt="{{ product.name_ar }}" loading="lazy" class="w-full h-full object-contain">
+                    {% else %}
+                        <svg class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+                        </svg>
+                    {% endif %}
+                </div>
+                <p class="text-xs font-semibold text-gray-700 line-clamp-2 min-h-[2rem]">{{ product.name_ar }}</p>
+                {% if request.user.is_authenticated and unit %}
+                    <p class="text-sm font-bold text-primary-800 mt-1">{{ unit.unit_price }} ج.م</p>
+                {% else %}
+                    <p class="text-[10px] text-gold-600 mt-1">سجّل دخول لعرض السعر</p>
+                {% endif %}
+            </a>
+            {% endwith %}{% endwith %}
+            {% endfor %}
+        </div>
+        {% endwith %}
+    </div>
+</div>
+{% endif %}
+
 <div class="max-w-7xl mx-auto px-4 pt-6">
     <h2 class="text-lg font-bold text-primary-900">كل المنتجات</h2>
 </div>

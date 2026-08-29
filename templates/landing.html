@@ -35,6 +35,10 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
                    class="bg-gold-500 hover:bg-gold-600 text-primary-900 font-bold px-7 py-3 rounded-xl transition text-center">
                     تسوق الآن
                 </a>
+                <a href="{% url 'orders:prescription_upload' %}"
+                   class="bg-white/10 hover:bg-white/20 text-white font-bold px-7 py-3 rounded-xl transition text-center">
+                    رفع روشتة
+                </a>
                 {% if categories %}
                 <a href="#categories"
                    class="border border-white/70 hover:bg-white/10 text-white font-bold px-7 py-3 rounded-xl transition text-center">
@@ -79,28 +83,6 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
         </div>
     </div>
 
-    <!-- زرار "طلب روشتة" — بقى فعّال ومربوط بصفحة حقيقية (orders:prescription_upload).
-         زرار "العروض" لسه placeholder غير فعّال (Phase منفصلة لاحقًا لم يتفق
-         عليها بعد) — باقي زي ما هو: مفيش href حقيقي، disabled فعليًا
-         (pointer-events-none)، وبادچ "قريبًا" واضح. -->
-    <div class="max-w-7xl mx-auto px-4 pb-10">
-        <div class="grid grid-cols-2 gap-3 max-w-md mx-auto">
-            <a href="{% url 'orders:prescription_upload' %}" class="relative bg-white/10 rounded-xl p-4 text-center hover:bg-white/20 transition">
-                <svg class="w-5 h-5 mx-auto mb-1 text-gold-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/>
-                </svg>
-                <p class="font-bold text-xs">طلب روشتة</p>
-            </a>
-            <div class="relative bg-white/10 rounded-xl p-4 text-center opacity-60 pointer-events-none select-none" aria-disabled="true">
-                <span class="absolute top-1.5 left-1.5 bg-gold-500 text-primary-900 text-[9px] font-bold px-1.5 py-0.5 rounded-full">قريبًا</span>
-                <svg class="w-5 h-5 mx-auto mb-1 text-gold-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.83.699 2.528 0l4.318-4.318a1.79 1.79 0 000-2.528l-9.581-9.581A2.25 2.25 0 009.568 3z"/>
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z"/>
-                </svg>
-                <p class="font-bold text-xs">العروض</p>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- تسوق حسب الفئة — نفس مصدر ونمط كروت Phase 4 بالظبط (نفس الأيقونة
@@ -145,6 +127,73 @@ hx-on:cartUpdated="htmx.ajax('GET','{% url 'orders:cart_badge' %}',{target:'#car
     <img src="{{ landing_settings.banner_1.image.url }}" alt="MG Pharmacy"
          class="w-full max-h-72 object-cover rounded-2xl shadow-md" loading="lazy">
     {% if landing_settings.banner_1_link %}</a>{% endif %}
+</div>
+{% endif %}
+
+<!-- منتجات مختارة — بديل مؤقت لقسم "عروض حصرية" في التصميم المقترَح.
+     العروض الحقيقية (خصومات/هدايا) لسه مش موجودة كميزة في المشروع، فبدل
+     ما نعرض ادّعاءات وهمية ("خصم 25%"، "هدية مجانية")، القسم ده بيعرض
+     منتجين حقيقيين من أحدث المنتجات (نفس مصدر featured_products) بنفس
+     الشكل البصري البارز (كارت كحلي/ذهبي كبير) لحد ما نتفق على شكل
+     ميزة العروض الفعلية ونبنيها كـ phase منفصلة. -->
+<!-- منتجات مختارة — بديل مؤقت لقسم "عروض حصرية" في التصميم المقترَح.
+     العروض الحقيقية (خصومات/هدايا) لسه مش موجودة كميزة في المشروع، فبدل
+     ما نعرض ادّعاءات وهمية ("خصم 25%"، "هدية مجانية")، القسم ده بيعرض
+     أحدث المنتجات الحقيقية (نفس featured_products) في سلايد ماراكي
+     تلقائي مستمر من اليمين للشمال — لحد ما نتفق على شكل ميزة العروض
+     الفعلية ونبنيها كـ phase منفصلة.
+
+     تنفيذ الحركة: CSS بحت (@keyframes + animation)، من غير أي
+     JavaScript. المنتجات بتترسم مرة واحدة بس مع الصفحة (نفس البيانات
+     المستخدمة أصلًا في قسم "أحدث المنتجات" تحت — مفيش استعلام إضافي
+     للداتابيز)، والحركة نفسها شغالة بالكامل جوه متصفح العميل، فمفيش
+     أي حمل إضافي على السيرفر لكل عميل بيفتح الصفحة. المسار بيتكرر
+     مرتين (نفس المنتجات مرة تانية) عشان اللفة تبقى متصلة (seamless
+     loop) من غير قفزة أو فجوة لما يوصل للنهاية. -->
+{% if featured_products %}
+<style>
+@keyframes mg-marquee-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+.mg-marquee-track {
+    animation: mg-marquee-scroll 30s linear infinite;
+}
+.mg-marquee-track:hover {
+    animation-play-state: paused;
+}
+</style>
+<div class="py-10 overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 mb-6">
+        <h2 class="text-2xl font-bold text-primary-800">منتجات مختارة</h2>
+    </div>
+    <div class="overflow-hidden">
+        <div class="mg-marquee-track flex gap-4 w-max">
+            {% for product in featured_products|add:featured_products %}
+            {% with units=product|units_for_client:request.user %}{% with unit=units.0 %}
+            <a href="{% url 'store:product_detail' product.pk %}"
+               class="w-40 shrink-0 bg-white border border-gray-100 rounded-card shadow-soft hover:shadow-md hover:border-gold-400 transition p-3 flex flex-col">
+                <div class="aspect-square bg-gray-50 rounded-xl overflow-hidden flex items-center justify-center mb-2">
+                    {% if product.image %}
+                        <img src="{% if product.image.thumbnail %}{{ product.image.thumbnail.url }}{% else %}{{ product.image.image.url }}{% endif %}"
+                             alt="{{ product.name_ar }}" loading="lazy" class="w-full h-full object-contain">
+                    {% else %}
+                        <svg class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+                        </svg>
+                    {% endif %}
+                </div>
+                <p class="text-xs font-semibold text-gray-700 line-clamp-2 min-h-[2rem]">{{ product.name_ar }}</p>
+                {% if request.user.is_authenticated and unit %}
+                    <p class="text-sm font-bold text-primary-800 mt-1">{{ unit.unit_price }} ج.م</p>
+                {% else %}
+                    <p class="text-[10px] text-gold-600 mt-1">سجّل دخول لعرض السعر</p>
+                {% endif %}
+            </a>
+            {% endwith %}{% endwith %}
+            {% endfor %}
+        </div>
+    </div>
 </div>
 {% endif %}
 
