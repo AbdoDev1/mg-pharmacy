@@ -9,7 +9,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 
 from invoices.models import merge_orders_with_returns_for_staff
-from orders.models import Order, OrderItem
+from orders.models import Order, OrderItem, PrescriptionRequest
 from staff.permissions import perm_required
 from tags.services import tags_for_many
 
@@ -21,20 +21,43 @@ ITEMS_PER_DETAIL_PAGE = 20  # ترقيم صفحات جدول الأصناف في
 @perm_required('orders.view_order')
 def order_list(request):
     status = request.GET.get('status', '')
+    origin = request.GET.get('origin', '')
     orders = Order.objects.filter(status=status) if status else Order.objects.all()
 
-    # إشعارات المرتجع بتتحط في نفس قائمة الطلبات كصف مستقل (رقم الإشعار،
-    # العميل، القيمة، التاريخ) — من غير تفاصيل الأصناف المرتجعة (دي موجودة
-    # في صفحة طباعة الإشعار نفسها لو الستاف عايز يفتحها). بتظهر بس في تبويب
-    # "الكل" لأن حالات الطلب (PENDING/CONFIRMED/...) مش منطبقة على إشعار مرتجع.
+    # فلتر "أصل الطلب" (مهمة منفصلة عن دمج الروشتات تحت — فلتر إضافي على
+    # قائمة Order نفسها): origin=prescription يعرض بس الطلبات اللي اتحولت
+    # من روشتة (عن طريق العلاقة العكسية Order.prescription_request، اسمها
+    # الـ related_name لـ PrescriptionRequest.resulting_order)، origin=direct
+    # يعرض الطلبات المباشرة بس. مبيأثرش على صفوف الروشتات نفسها (kind=
+    # 'prescription' تحت) ولا على المرتجعات.
+    if origin == 'prescription':
+        # .distinct() احتياطي: prescription_request FK مش OneToOne، فلو
+        # (نظريًا) أكتر من روشتة أشارت لنفس الطلب، الـ join كان ممكن يكرر
+        # صف الطلب في النتيجة.
+        orders = orders.filter(prescription_request__isnull=False).distinct()
+    elif origin == 'direct':
+        orders = orders.filter(prescription_request__isnull=True)
+
+    # إشعارات المرتجع وطلبات الروشتة بيتحطوا في نفس قائمة الطلبات كصفوف
+    # مستقلة (رقم الإشعار/الروشتة، العميل، التاريخ) — من غير تفاصيل كاملة
+    # (دي موجودة في صفحة الإشعار/الروشتة نفسها لو الستاف عايز يفتحها).
+    # بيظهروا بس في تبويب "الكل" لأن حالاتهم (RETURN مفهاش status أصلًا،
+    # وPrescriptionRequest.Status مجموعة قيم مختلفة تمامًا عن Order.Status
+    # رغم تشابه بعض الأسماء زي PENDING) مش منطبقة على فلتر status بتاع
+    # Order — نفس السلوك اللي المرتجعات بتتبعه من قبل كده.
     #
     # الدمج والترتيب والترقيم بيحصلوا على مستوى قاعدة البيانات (union) جوه
     # merge_orders_with_returns_for_staff، مش بتحميل كل الطلبات والمرتجعات
     # في الذاكرة وترتيبهم بايثون زي الكود القديم — ده كان بيبطّئ الصفحة (أو
     # يوقفها تمامًا) مع نمو عدد الطلبات بمرور الوقت.
+    prescriptions = (
+        PrescriptionRequest.objects.select_related('client', 'address')
+        if not status else None
+    )
     page_obj = merge_orders_with_returns_for_staff(
         orders, include_returns=not status,
         page=request.GET.get('page'), page_size=STAFF_LIST_PAGE_SIZE,
+        prescriptions_qs=prescriptions,
     )
 
     # وسم كل طلب في الصفحة الحالية باستعلام واحد بدل ما نستدعي tags_for
@@ -49,6 +72,7 @@ def order_list(request):
         'rows': page_obj,
         'page_obj': page_obj,
         'selected_status': status,
+        'selected_origin': origin,
         'status_choices': Order.Status.choices,
     }
     return render(request, 'staff/orders/list.html', context)

@@ -449,23 +449,31 @@ class InvoiceReversal(models.Model):
 def _merge_and_paginate_order_return_rows(
     orders_qs, reversals_qs, page=1, page_size=20,
     order_hydrate_qs=None, reversal_hydrate_qs=None,
+    prescriptions_qs=None, prescription_hydrate_qs=None,
 ):
     """
     الأساس المشترك اللي بتبني عليه merge_orders_with_returns (تبويب "طلباتي"
     الخاص بعميل واحد) وmerge_orders_with_returns_for_staff (قائمة الستاف
-    الكاملة لكل العملاء): بيدمج orders_qs مع reversals_qs في قائمة واحدة
-    مرتبة بالتاريخ (الأحدث فوق) على مستوى قاعدة البيانات باستخدام union +
-    index خفيف، وبيرقّم الصفحات على الـindex ده بس *قبل* تحميل أي كائن
-    فعلي — بعدين بيحمّل كائنات صفحة واحدة بس (مش كل الجدول).
+    الكاملة لكل العملاء): بيدمج orders_qs مع reversals_qs (ومع
+    prescriptions_qs اختياريًا) في قائمة واحدة مرتبة بالتاريخ (الأحدث فوق)
+    على مستوى قاعدة البيانات باستخدام union + index خفيف، وبيرقّم الصفحات
+    على الـindex ده بس *قبل* تحميل أي كائن فعلي — بعدين بيحمّل كائنات صفحة
+    واحدة بس (مش كل الجدول).
 
-    order_hydrate_qs / reversal_hydrate_qs: queryset (بدون فلتر pk) بتُستخدم
-    لتحميل الكائنات الفعلية لصفوف الصفحة الحالية — تسمح لكل استدعاء يحدد
-    select_related/prefetch_related المناسبة له (عميل واحد غير محتاج
-    select_related('client') مثلًا، أما قائمة الستاف محتاجاها). لو None
-    بيستخدم Order.objects.all() / InvoiceReversal.objects.all() بسيطة.
+    order_hydrate_qs / reversal_hydrate_qs / prescription_hydrate_qs:
+    queryset (بدون فلتر pk) بتُستخدم لتحميل الكائنات الفعلية لصفوف الصفحة
+    الحالية — تسمح لكل استدعاء يحدد select_related/prefetch_related
+    المناسبة له (عميل واحد غير محتاج select_related('client') مثلًا، أما
+    قائمة الستاف محتاجاها). لو None بيستخدم .objects.all() بسيطة.
 
-    بترجّع Page object فيه صفوف dict كل واحد له 'kind' ('order' أو 'return')
-    و'obj' و'created_at'.
+    prescriptions_qs=None (الافتراضي) بيسيب طلبات الروشتة برّه الدمج
+    تمامًا — عشان merge_orders_with_returns (تبويب "طلباتي" عند العميل)
+    يفضل شغال بالظبط زي ما هو من غير أي تغيير في السلوك؛ طلبات الروشتة
+    بتظهر بس لما الاستدعاء (merge_orders_with_returns_for_staff) يمررها
+    صراحةً.
+
+    بترجّع Page object فيه صفوف dict كل واحد له 'kind'
+    ('order' أو 'return' أو 'prescription') و'obj' و'created_at'.
     """
     from django.core.paginator import Page, Paginator
     from django.db.models import CharField, F, IntegerField, Value
@@ -487,7 +495,18 @@ def _merge_and_paginate_order_return_rows(
         source_rank=Value(1, output_field=IntegerField()),
     ).values('kind', 'source_id', 'source_rank', 'created_at')
 
-    combined_indexes = order_indexes.union(return_indexes, all=True).order_by(
+    combined_indexes = order_indexes.union(return_indexes, all=True)
+
+    if prescriptions_qs is not None:
+        clean_prescriptions_qs = prescriptions_qs.order_by()
+        prescription_indexes = clean_prescriptions_qs.annotate(
+            kind=Value('prescription', output_field=CharField()),
+            source_id=F('pk'),
+            source_rank=Value(2, output_field=IntegerField()),
+        ).values('kind', 'source_id', 'source_rank', 'created_at')
+        combined_indexes = combined_indexes.union(prescription_indexes, all=True)
+
+    combined_indexes = combined_indexes.order_by(
         '-created_at', 'source_rank', '-source_id'
     )
 
@@ -502,10 +521,18 @@ def _merge_and_paginate_order_return_rows(
         item['source_id'] for item in index_page.object_list
         if item['kind'] == 'return'
     ]
+    prescription_ids = [
+        item['source_id'] for item in index_page.object_list
+        if item['kind'] == 'prescription'
+    ]
 
-    from orders.models import Order
+    from orders.models import Order, PrescriptionRequest
     base_order_qs = order_hydrate_qs if order_hydrate_qs is not None else Order.objects.all()
     base_reversal_qs = reversal_hydrate_qs if reversal_hydrate_qs is not None else InvoiceReversal.objects.all()
+    base_prescription_qs = (
+        prescription_hydrate_qs if prescription_hydrate_qs is not None
+        else PrescriptionRequest.objects.all()
+    )
 
     orders_by_id = {
         order.pk: order
@@ -515,6 +542,10 @@ def _merge_and_paginate_order_return_rows(
         reversal.pk: reversal
         for reversal in base_reversal_qs.filter(pk__in=return_ids)
     }
+    prescriptions_by_id = {
+        prescription.pk: prescription
+        for prescription in base_prescription_qs.filter(pk__in=prescription_ids)
+    }
 
     rows = []
     for item in index_page.object_list:
@@ -522,10 +553,14 @@ def _merge_and_paginate_order_return_rows(
             obj = orders_by_id.get(item['source_id'])
             if obj:
                 rows.append({'kind': 'order', 'obj': obj, 'created_at': item['created_at']})
-        else:
+        elif item['kind'] == 'return':
             obj = reversals_by_id.get(item['source_id'])
             if obj:
                 rows.append({'kind': 'return', 'obj': obj, 'created_at': item['created_at']})
+        else:
+            obj = prescriptions_by_id.get(item['source_id'])
+            if obj:
+                rows.append({'kind': 'prescription', 'obj': obj, 'created_at': item['created_at']})
 
     return Page(rows, index_page.number, paginator)
 
@@ -547,7 +582,9 @@ def merge_orders_with_returns(orders_qs, client, page=1, page_size=20):
     )
 
 
-def merge_orders_with_returns_for_staff(orders_qs, include_returns=True, page=1, page_size=30):
+def merge_orders_with_returns_for_staff(
+    orders_qs, include_returns=True, page=1, page_size=30, prescriptions_qs=None,
+):
     """
     نسخة لوحة الستاف من merge_orders_with_returns — بتغطي طلبات كل العملاء
     (مش عميل واحد)، فمحتاجة reversals_qs عام بدل الفلترة بعميل معيّن.
@@ -557,20 +594,33 @@ def merge_orders_with_returns_for_staff(orders_qs, include_returns=True, page=1,
     زي المشكلة الأصلية اللي merge_orders_with_returns اتعمل عشان يحلها.
 
     include_returns=False (لما فلتر status مفعّل في staff:order_list) بيرجّع
-    الطلبات بس من غير مرتجعات — نفس سلوك الكود القديم (المرتجعات بتظهر بس
-    في تبويب "الكل" لأن حالات الطلب مش منطبقة على إشعار مرتجع).
+    الطلبات بس من غير مرتجعات ولا روشتات — نفس سلوك الكود القديم مع
+    المرتجعات (بتظهر بس في تبويب "الكل" لأن حالات الطلب مش منطبقة على
+    إشعار مرتجع أو على حالة روشتة PrescriptionRequest.Status، وهي مجموعة
+    قيم مختلفة تمامًا عن Order.Status رغم تشابه بعض الأسماء زي PENDING).
+
+    prescriptions_qs: اختياري، لو اتمرر (queryset من PrescriptionRequest)
+    بيتضاف كصف تالت في الدمج (kind='prescription') — لو None (الافتراضي)
+    بيسيب الروشتات برّه القائمة تمامًا.
     """
     from orders.models import Order
 
     if include_returns:
         reversals_qs = InvoiceReversal.objects.all()
+        effective_prescriptions_qs = prescriptions_qs
     else:
         reversals_qs = InvoiceReversal.objects.none()
+        effective_prescriptions_qs = None
 
     return _merge_and_paginate_order_return_rows(
         orders_qs, reversals_qs, page=page, page_size=page_size,
         order_hydrate_qs=Order.objects.select_related('client').prefetch_related('items'),
         reversal_hydrate_qs=InvoiceReversal.objects.select_related('invoice__order__client'),
+        prescriptions_qs=effective_prescriptions_qs,
+        prescription_hydrate_qs=(
+            None if prescriptions_qs is None
+            else prescriptions_qs.model.objects.select_related('client', 'address')
+        ),
     )
 
 

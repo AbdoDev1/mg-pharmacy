@@ -1,0 +1,103 @@
+{% extends 'staff/base.html' %}
+{% load staff_ui %}
+{% block title %}روشتة #{{ prescription.pk }} — MG Pharmacy{% endblock %}
+{% block breadcrumbs %}
+<nav class="flex items-center text-sm text-gray-500 mb-4">
+    {% crumb "الرئيسية" "staff:dashboard" %}
+    {% crumb "الطلبات" "staff:order_list" %}
+    <span class="text-gray-700 font-medium">روشتة #{{ prescription.pk }}</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-6">
+    <div>
+        <h1 class="text-xl font-bold text-gray-800">روشتة #{{ prescription.pk }}</h1>
+        <p class="text-gray-500 text-sm mt-1">
+            العميل: <span class="font-medium text-gray-700">{{ prescription.client.username }}</span>
+            {% if prescription.client.phone %} — {{ prescription.client.phone }}{% endif %}
+            — {{ prescription.created_at|date:"Y-m-d H:i" }}
+        </p>
+    </div>
+    <div>
+        {% status_badge prescription.get_status_display group="prescription_status" key=prescription.status size="md" %}
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+
+        <!-- صورة / وصف الروشتة -->
+        <div class="bg-white rounded-2xl shadow-sm p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-3">الروشتة</h2>
+            {% if prescription.image %}
+            <a href="{% url 'orders:prescription_image' prescription.pk %}" target="_blank" rel="noopener">
+                <img src="{% url 'orders:prescription_image' prescription.pk %}" alt="صورة الروشتة"
+                     class="max-w-full rounded-xl border border-gray-200">
+            </a>
+            {% endif %}
+            {% if prescription.text_description %}
+            <p class="text-gray-700 text-sm whitespace-pre-line {% if prescription.image %}mt-4{% endif %}">
+                {{ prescription.text_description }}
+            </p>
+            {% endif %}
+            {% if not prescription.image and not prescription.text_description %}
+            <p class="text-gray-400 text-sm">لا توجد صورة أو وصف.</p>
+            {% endif %}
+        </div>
+
+        <!-- تحديث الحالة والملاحظات -->
+        <div class="bg-white rounded-2xl shadow-sm p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-3">مراجعة الروشتة</h2>
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-4">
+                    <label class="block text-xs text-gray-500 mb-1">الحالة</label>
+                    <select name="status" class="w-full sm:w-64 border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                        {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if prescription.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs text-gray-500 mb-1">ملاحظات المخزن</label>
+                    <textarea name="staff_notes" rows="4"
+                              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">{{ prescription.staff_notes }}</textarea>
+                </div>
+                <button type="submit"
+                        class="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                    حفظ
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="space-y-6">
+        <!-- بيانات التوصيل والسياسة -->
+        <div class="bg-white rounded-2xl shadow-sm p-5">
+            <h2 class="text-sm font-semibold text-gray-700 mb-3">بيانات الطلب</h2>
+            <dl class="text-sm space-y-3">
+                <div>
+                    <dt class="text-gray-500">عنوان التوصيل</dt>
+                    <dd class="text-gray-800 mt-0.5">{{ prescription.address.full_address }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">لو صنف مش متوفر</dt>
+                    <dd class="text-gray-800 mt-0.5">{{ prescription.get_unavailable_policy_display }}</dd>
+                </div>
+                {% if prescription.resulting_order %}
+                <div>
+                    <dt class="text-gray-500">الطلب الناتج</dt>
+                    <dd class="mt-0.5">
+                        <a href="{% url 'staff:order_detail' prescription.resulting_order.pk %}"
+                           class="text-primary-600 hover:underline">#{{ prescription.resulting_order.pk }}</a>
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

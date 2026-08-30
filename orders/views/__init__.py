@@ -29,7 +29,7 @@ from .cart import (
 )
 from .checkout import checkout
 from .decorators import client_required
-from .prescription import prescription_upload
+from .prescription import prescription_image, prescription_upload
 from .order import (
     order_approve_amendment,
     order_detail,
@@ -48,5 +48,5 @@ __all__ = [
     'checkout',
     'order_detail', 'order_items', 'order_list', 'order_reorder',
     'order_approve_amendment', 'order_reject_amendment',
-    'prescription_upload',
+    'prescription_upload', 'prescription_image',
 ]

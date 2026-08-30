@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from accounts.models import User, Address
 from products.models import ProductUnit
+from orders.storage import PrescriptionImageStorage
 
 
 class SiteConfig(models.Model):
@@ -923,7 +924,11 @@ class PrescriptionRequest(models.Model):
         verbose_name='عنوان التوصيل',
     )
     image = models.ImageField(
-        upload_to='prescriptions/%Y/%m/', blank=True, null=True,
+        # storage مخصص برّه MEDIA_ROOT العام (راجع orders/storage.py
+        # وSECURITY_REPORT.md) — upload_to هنا بقى مسار نسبي جوه
+        # PRESCRIPTIONS_ROOT بس، مش جوه MEDIA_ROOT.
+        storage=PrescriptionImageStorage(),
+        upload_to='%Y/%m/', blank=True, null=True,
         verbose_name='صورة الروشتة',
     )
     text_description = models.TextField(

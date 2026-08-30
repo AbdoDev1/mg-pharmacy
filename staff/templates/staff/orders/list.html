@@ -16,16 +16,32 @@
 
 <!-- فلتر الحالة -->
 <div class="bg-white rounded-2xl shadow-sm p-4 mb-6 flex flex-wrap gap-2 text-sm">
-    <a href="{% url 'staff:order_list' %}"
+    <a href="{% url 'staff:order_list' %}{% if selected_origin %}?origin={{ selected_origin }}{% endif %}"
        class="px-3 py-1.5 rounded-lg {% if not selected_status %}bg-primary-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
         الكل
     </a>
     {% for value, label in status_choices %}
-    <a href="?status={{ value }}"
+    <a href="?status={{ value }}{% if selected_origin %}&origin={{ selected_origin }}{% endif %}"
        class="px-3 py-1.5 rounded-lg {% if selected_status == value %}bg-primary-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
         {{ label }}
     </a>
     {% endfor %}
+</div>
+
+<!-- فلتر أصل الطلب (روشتة / مباشر) -->
+<div class="bg-white rounded-2xl shadow-sm p-4 mb-6 flex flex-wrap gap-2 text-sm">
+    <a href="?status={{ selected_status }}"
+       class="px-3 py-1.5 rounded-lg {% if not selected_origin %}bg-primary-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        كل الأصول
+    </a>
+    <a href="?status={{ selected_status }}&origin=prescription"
+       class="px-3 py-1.5 rounded-lg {% if selected_origin == 'prescription' %}bg-primary-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        من روشتة
+    </a>
+    <a href="?status={{ selected_status }}&origin=direct"
+       class="px-3 py-1.5 rounded-lg {% if selected_origin == 'direct' %}bg-primary-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}">
+        طلب مباشر
+    </a>
 </div>
 
 <div class="bg-white rounded-2xl shadow-sm overflow-x-auto">
@@ -66,7 +82,7 @@
                 </td>
             </tr>
             {% endwith %}
-            {% else %}
+            {% elif row.kind == 'return' %}
             {% with reversal=row.obj %}
             <tr class="hover:bg-rose-50/40">
                 <td class="px-4 py-3 font-medium sticky-col">
@@ -83,6 +99,23 @@
                 </td>
             </tr>
             {% endwith %}
+            {% elif row.kind == 'prescription' %}
+            {% with prescription=row.obj %}
+            <tr class="hover:bg-amber-50/40">
+                <td class="px-4 py-3 font-medium sticky-col">
+                    <span class="font-semibold">روشتة #{{ prescription.pk }}</span>
+                </td>
+                <td class="px-4 py-3">{{ prescription.client.username }}</td>
+                <td class="px-4 py-3 text-gray-400">—</td>
+                <td class="px-4 py-3">
+                    {% status_badge prescription.get_status_display group="prescription_status" key=prescription.status %}
+                </td>
+                <td class="px-4 py-3 text-gray-500">{{ prescription.created_at|date:"Y-m-d H:i" }}</td>
+                <td class="px-4 py-3">
+                    <a href="{% url 'staff:prescription_detail' prescription.pk %}" class="text-amber-700 hover:underline text-xs">عرض</a>
+                </td>
+            </tr>
+            {% endwith %}
             {% endif %}
             {% empty %}
             <tr>
@@ -96,12 +129,12 @@
 {% if page_obj.paginator.num_pages > 1 %}
 <div class="flex items-center justify-center gap-2 mt-4 text-sm">
     {% if page_obj.has_previous %}
-    <a href="?status={{ selected_status }}&page={{ page_obj.previous_page_number }}"
+    <a href="?status={{ selected_status }}&origin={{ selected_origin }}&page={{ page_obj.previous_page_number }}"
        class="px-3 py-2 rounded-lg bg-white shadow-sm hover:bg-primary-50 text-gray-600">السابق</a>
     {% endif %}
     <span class="text-gray-500 px-2">صفحة {{ page_obj.number }} من {{ page_obj.paginator.num_pages }}</span>
     {% if page_obj.has_next %}
-    <a href="?status={{ selected_status }}&page={{ page_obj.next_page_number }}"
+    <a href="?status={{ selected_status }}&origin={{ selected_origin }}&page={{ page_obj.next_page_number }}"
        class="px-3 py-2 rounded-lg bg-white shadow-sm hover:bg-primary-50 text-gray-600">التالي</a>
     {% endif %}
 </div>

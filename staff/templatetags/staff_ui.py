@@ -42,6 +42,12 @@ BADGE_COLOR_MAPS = {
         'PENDING': 'yellow',
         'SUSPENDED': 'red',
     },
+    'prescription_status': {
+        'PENDING': 'amber',
+        'PROCESSING': 'blue',
+        'FULFILLED': 'green',
+        'CANCELLED': 'red',
+    },
     'employee_role': {
         'ADMIN': 'purple',
         'STAFF': 'blue',
@@ -54,6 +60,7 @@ COLOR_CLASSES = {
     'orange': 'bg-orange-100 text-orange-700',
     'red': 'bg-red-100 text-red-600',
     'rose': 'bg-rose-100 text-rose-700',
+    'amber': 'bg-amber-100 text-amber-700',
     'blue': 'bg-blue-100 text-blue-700',
     'purple': 'bg-purple-100 text-purple-700',
     'gray': 'bg-gray-100 text-gray-500',

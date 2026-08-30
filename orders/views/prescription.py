@@ -1,13 +1,15 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.shortcuts import redirect, render
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.models import Address
 
 from ..forms import PrescriptionRequestForm
+from ..models import PrescriptionRequest
 from .decorators import client_required
 
-__all__ = ['prescription_upload']
+__all__ = ['prescription_upload', 'prescription_image']
 
 
 @client_required
@@ -58,3 +60,27 @@ def prescription_upload(request):
         'form': form,
         'addresses': addresses,
     })
+
+
+def prescription_image(request, pk):
+    """
+    الطريقة المحمية الوحيدة لعرض صورة روشتة — الصورة متخزنة برّه
+    MEDIA_ROOT العام (راجع orders/storage.py وSECURITY_REPORT.md)، فمفيش
+    رابط مباشر ليها أصلًا (.image.url هترمي Exception). هنا بنتحقق يدويًا
+    قبل ما نقرا الملف من القرص ونرجّعه: إما (أ) نفس العميل صاحب الروشتة،
+    أو (ب) موظف عنده صلاحية orders.view_order — نفس الصلاحية المستخدمة في
+    staff:prescription_detail وباقي شاشات الطلبات.
+    """
+    prescription = get_object_or_404(PrescriptionRequest, pk=pk)
+
+    if not request.user.is_authenticated:
+        raise Http404
+    is_owner = request.user.pk == prescription.client_id
+    is_staff_viewer = request.user.has_perm('orders.view_order')
+    if not (is_owner or is_staff_viewer):
+        raise Http404
+
+    if not prescription.image:
+        raise Http404
+
+    return FileResponse(prescription.image.open('rb'))

@@ -338,6 +338,16 @@ import os
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# مسار تخزين منفصل *برّه* MEDIA_ROOT لصور الروشتات — راجع SECURITY_REPORT.md.
+# nginx بيعرض MEDIA_ROOT بالكامل عام بلا auth (location /media/ لصور
+# المنتجات/الأقسام، ده مقصود)، فمينفعش صور روشتة (مستند طبي شخصي) تتحط
+# تحت أي مسار جواه مهما كان اسم الفولدر، لأن الـ alias بيغطي كل حاجة تحت
+# /app/media/ بغض النظر عن الفولدر الفرعي. الحل الأنضف: تخزين منفصل تمامًا
+# مش تحت MEDIA_ROOT خالص، بيتقدّم بس من خلال orders:prescription_image
+# (view محمي بيتحقق من الصلاحية) — راجع orders/storage.py.
+PRESCRIPTIONS_ROOT = os.path.join(BASE_DIR, 'private_media', 'prescriptions')
+
 LOGIN_URL = '/accounts/login/'
 
 # حد أقصى لحجم بيانات الطلب غير الملفات (حقول الفورم/JSON) — حماية إضافية
